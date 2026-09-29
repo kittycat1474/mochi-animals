@@ -1,0 +1,18 @@
+.godot/
+builds/
+*.tmp
+
+# Local OS/editor files and exported builds.
+.DS_Store
+._*
+*.app/
+*.zip
+*.pck
+
+# Local credentials and signing material must never be committed.
+.env
+.env.*
+export_credentials.cfg
+*.p12
+*.pfx
+*.keystore
