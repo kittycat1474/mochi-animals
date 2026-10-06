@@ -5,7 +5,17 @@ const UI = preload("res://assets/source/buttons.png")
 const CUP = preload("res://assets/source/cup.png")
 const REFERENCE = preload("res://assets/source/layout-reference.png")
 const ROOM = preload("res://assets/room.png")
-const CUP_RECT := Rect2(26, 268, 468, 585)
+const CHAIN = preload("res://assets/source/evolution-ten-v28.png")
+const NEXT_CAPSULE = preload("res://assets/source/next-capsule.png")
+# Preserve the approved PNG and sample its capsule without transparent margins.
+const NEXT_REGION := Rect2(70, 70, 836, 1470)
+const NEXT_PREVIEW_CENTER := Vector2(484, 960)
+const NEXT_PREVIEW_RADIUS := 306.0
+# Sample the actual strip, excluding the attachment's large transparent padding.
+# The supplied pixels remain unchanged, including its illustrated border.
+const CHAIN_REGION := Rect2(8, 244, 2156, 238)
+const Layout = preload("res://scripts/cup_layout.gd")
+const CUP_RECT := Rect2(26, 268 + Layout.SHIFT_Y, 468, 585)
 const RECTS := {
 	"play": Rect2(43, 59, 553, 199), "restart": Rect2(49, 282, 539, 164),
 	"home_long": Rect2(49, 468, 539, 165),
@@ -37,6 +47,12 @@ static func textured_polygon(c: CanvasItem, texture: Texture2D, source: PackedVe
 	c.draw_polygon(vertices, PackedColorArray([Color.WHITE]), uv, texture)
 
 static func asset(c: CanvasItem, name: String, destination: Rect2) -> void:
+	if name == "next":
+		c.draw_texture_rect_region(NEXT_CAPSULE, destination, NEXT_REGION)
+		return
+	if name == "chain":
+		c.draw_texture_rect_region(CHAIN, destination, CHAIN_REGION)
+		return
 	if name == "home":
 		var region := Rect2(38, 23, 119, 115)
 		textured_polygon(c, REFERENCE, rounded(region, 34), region, destination)
@@ -61,6 +77,12 @@ static func patch(c: CanvasItem, name: String, target: Rect2, area: Rect2, clean
 	var mapped := Rect2(target.position + (area.position - region.position) / region.size * target.size, area.size / region.size * target.size)
 	c.draw_texture_rect_region(UI, mapped, clean_strip)
 
+static func next_preview_center(destination: Rect2) -> Vector2:
+	return destination.position + (NEXT_PREVIEW_CENTER - NEXT_REGION.position) / NEXT_REGION.size * destination.size
+
+static func next_preview_radius(destination: Rect2) -> float:
+	return NEXT_PREVIEW_RADIUS * destination.size.x / NEXT_REGION.size.x
+
 static func cup_piece(c: CanvasItem, points: PackedVector2Array) -> void:
 	textured_polygon(c, CUP, points, Rect2(0, 0, 1122, 1402), CUP_RECT)
 
@@ -77,7 +99,10 @@ static func cup_back(c: CanvasItem) -> void:
 	cup_piece(c, rim)
 	cup_piece(c, PackedVector2Array([Vector2(88,160),Vector2(101,122),Vector2(122,91),Vector2(149,74),Vector2(177,69),Vector2(207,76),Vector2(231,94),Vector2(250,124),Vector2(263,188),Vector2(218,194),Vector2(151,181)]))
 	cup_piece(c, PackedVector2Array([Vector2(858,188),Vector2(869,133),Vector2(888,98),Vector2(914,77),Vector2(944,68),Vector2(974,73),Vector2(1001,88),Vector2(1023,120),Vector2(1035,160),Vector2(998,181),Vector2(925,194)]))
-	c.draw_colored_polygon(PackedVector2Array([Vector2(63,366),Vector2(462,366),Vector2(413,758),Vector2(118,758)]), Color(1.0,0.93,0.85,0.07))
+	var tint := PackedVector2Array([Vector2(63,366),Vector2(462,366),Vector2(413,758),Vector2(118,758)])
+	for i in tint.size():
+		tint[i].y += Layout.SHIFT_Y
+	c.draw_colored_polygon(tint, Color(1.0,0.93,0.85,0.07))
 
 static func cup_front(c: CanvasItem) -> void:
 	var front_rim := PackedVector2Array()

@@ -7,19 +7,28 @@ const Art = preload("res://scripts/asset_art.gd")
 const Sound = preload("res://scripts/sound.gd")
 const INK := Color("703719")
 const CREAM := Color("fff0d9")
-const HOME_RECT := Rect2(20, 15, 65, 65)
-const HAMMER_RECT := Rect2(20, 86, 71, 66)
-const BOMB_RECT := Rect2(20, 158, 71, 66)
-const NEXT_RECT := Rect2(202, 38, 134, 137)
-const COIN_RECT := Rect2(353, 18, 171, 51)
-const SCORE_RECT := Rect2(354, 85, 172, 57)
-const BEST_RECT := Rect2(354, 146, 172, 47)
+const HOME_RECT := Rect2(10, 80, 50, 50)
+const HAMMER_RECT := Rect2(5, 149, 60, 56)
+const BOMB_RECT := Rect2(5, 217, 60, 56)
+# Keep NEXT's top/right anchors and height, matching the new capsule's aspect.
+const NEXT_RECT := Rect2(528.0 - 106.0 * 836.0 / 1470.0, 80, 106.0 * 836.0 / 1470.0, 106)
+const CHAIN_RECT := Rect2(12, 874, 516, 516.0 * 238.0 / 2156.0)
+const COIN_RECT := Rect2(14, 10, 162, 49)
+const SCORE_RECT := Rect2(188, 10, 162, 53)
+const BEST_RECT := Rect2(363, 10, 162, 44)
+const DROP_TOP := 72.0
+const PLAY_RECT := Rect2(5, 65, 475, 768)
 const PAUSE_RECT := Rect2(483, 207, 45, 46)
 const STATS_RECT := Rect2(483, 258, 45, 46)
 const SOUND_RECT := Rect2(483, 309, 45, 46)
 const MUSIC_RECT := Rect2(483, 360, 45, 46)
 const PRIMARY_RECT := Rect2(119, 550, 302, 109)
 const SECONDARY_RECT := Rect2(145, 670, 250, 76)
+const SHOP_HAMMER_RECT := Rect2(145, 423, 105, 97)
+const SHOP_BOMB_RECT := Rect2(289, 423, 105, 97)
+const SHOP_PRIMARY_RECT := Rect2(119, 580, 302, 109)
+const TOOL_PRICES := {"hammer": 100, "bomb": 180}
+const TOOL_PURCHASE_LIMIT := 3
 const SAVE_PATH := "user://mochi_save.cfg"
 
 var world := World.new()
@@ -31,7 +40,7 @@ var best := 0
 var coins := 0
 var lifetime_merges := 0
 var highest_level := 0
-var current_level := 0
+var current_level := Data.FIRST_DROP
 var next_level := 0
 var aim_x := 265.0
 var cooldown := 0.0
@@ -51,13 +60,16 @@ var show_capture := false
 var capture_path := ""
 var capture_frames := 0
 var persistence_enabled := true
-var hammers := 3
-var bombs := 3
+var save_path := SAVE_PATH
+var hammers := 0
+var bombs := 0
+var tool_purchases := {"hammer": 0, "bomb": 0}
 var selected_tool := ""
 var previous_overlay := ""
 var capture_mode := ""
 
 func _ready() -> void:
+	get_window().title = "Mochi Animals — v2.8.1"
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	font.font_names = PackedStringArray(["Arial Rounded MT Bold", "Arial Rounded MT", "Arial"])
 	font.font_weight = 700
@@ -84,14 +96,36 @@ func _ready() -> void:
 		overlay = "gallery"
 	if capture_mode == "wall-regression":
 		seed_wall_regression()
+	if capture_mode == "overflow-layout":
+		seed_overflow_layout()
+	if capture_mode == "overlap-regression":
+		seed_overlap_regression()
+	if capture_mode == "sliding-regression":
+		seed_sliding_regression()
+	if capture_mode == "ten-animals":
+		seed_ten_animals()
+	if capture_mode == "fresh-cup":
+		reset_game()
+	if capture_mode == "shop":
+		reset_game()
+		overlay = "shop"
+	if capture_mode == "shop-limit":
+		reset_game()
+		coins = 1200
+		for i in TOOL_PURCHASE_LIMIT:
+			buy_tool("hammer")
+			buy_tool("bomb")
+		overlay = "shop"
+		toast_time = 0.0
 	get_window().focus_exited.connect(on_focus_lost)
 
 func reset_game() -> void:
 	world.clear()
 	score = 0
+	coins = 0
 	highest_level = 0
 	total_drops = 0
-	current_level = 0
+	current_level = Data.FIRST_DROP
 	next_level = Data.random_drop(rng)
 	aim_x = 265.0
 	cooldown = 0.0
@@ -103,8 +137,9 @@ func reset_game() -> void:
 	toast_time = 0.0
 	pointer_down = false
 	touch_id = -1
-	hammers = 3
-	bombs = 3
+	hammers = 0
+	bombs = 0
+	tool_purchases = {"hammer": 0, "bomb": 0}
 	selected_tool = ""
 	overlay = ""
 	queue_redraw()
@@ -113,27 +148,26 @@ func load_settings() -> void:
 	if not persistence_enabled:
 		return
 	var config := ConfigFile.new()
-	var result := config.load(SAVE_PATH)
-	if result != OK:
+	var result := config.load(save_path)
+	if result != OK and save_path == SAVE_PATH:
 		# Read the v1 save once when migrating to the English application name.
 		result = config.load(OS.get_user_data_dir().get_base_dir().path_join("Mochi Animals · 麻薯动物杯/mochi_save.cfg"))
 	if result == OK:
 		best = maxi(0, int(config.get_value("game", "best", 0)))
-		coins = maxi(0, int(config.get_value("game", "coins", 0)))
+		# Coins and tools now belong to a single cup. Ignore legacy balances.
 		lifetime_merges = maxi(0, int(config.get_value("game", "merges", 0)))
 		sound.enabled = bool(config.get_value("game", "sound", true))
-		sound.set_music(bool(config.get_value("game", "music", false)))
+		sound.restore_music(config)
 
 func save_settings() -> void:
 	if not persistence_enabled:
 		return
 	var config := ConfigFile.new()
 	config.set_value("game", "best", best)
-	config.set_value("game", "coins", coins)
 	config.set_value("game", "merges", lifetime_merges)
 	config.set_value("game", "sound", sound.enabled)
-	config.set_value("game", "music", sound.music_enabled)
-	config.save(SAVE_PATH)
+	sound.store_music(config)
+	config.save(save_path)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
@@ -190,12 +224,26 @@ func capture_frame() -> void:
 
 func set_aim(x: float) -> void:
 	var radius: float = Data.RADII[current_level]
-	aim_x = clampf(x, World.LEFT_TOP + radius + 8.0, World.RIGHT_TOP - radius - 8.0)
+	# Reserve the top-right NEXT card's width even for the larger capybara.
+	var right_edge := minf(World.RIGHT_TOP - 8.0, NEXT_RECT.position.x - 10.0)
+	aim_x = clampf(x, World.LEFT_TOP + radius + 8.0, right_edge - radius)
+
+func drop_position() -> Vector2:
+	# Keep every droppable species just below the top status row, fully visible.
+	return Vector2(aim_x, DROP_TOP + Data.RADII[current_level])
+
+func is_play_position(at: Vector2) -> bool:
+	if not PLAY_RECT.has_point(at):
+		return false
+	for rect in [HOME_RECT, HAMMER_RECT, BOMB_RECT, COIN_RECT, SCORE_RECT, BEST_RECT, PAUSE_RECT, STATS_RECT, SOUND_RECT, MUSIC_RECT, NEXT_RECT, CHAIN_RECT]:
+		if rect.has_point(at):
+			return false
+	return true
 
 func drop_animal() -> void:
 	if cooldown > 0.0 or not overlay.is_empty() or not selected_tool.is_empty():
 		return
-	world.add_animal(current_level, Vector2(aim_x, 269.0), Vector2(0.0, 35.0))
+	world.add_animal(current_level, drop_position(), Vector2(0.0, 35.0))
 	total_drops += 1
 	current_level = next_level
 	next_level = Data.random_drop(rng)
@@ -210,11 +258,7 @@ func on_merge(event: Dictionary) -> void:
 	coins += maxi(1, event.points / 10)
 	lifetime_merges += 1
 	best = maxi(best, score)
-	if event.level > highest_level:
-		highest_level = event.level
-		show_toast("Hello, " + Data.NAMES[event.level] + "!")
-	if event.level == Data.LAST_LEVEL:
-		show_toast("A little magic! You found Unicorn.", 4.0)
+	highest_level = maxi(highest_level, event.level)
 	save_settings()
 	sound.merge(event.level)
 	popups.append({"position": event.position + Vector2(0, -20), "text": "+%d" % event.points, "life": 1.1})
@@ -252,7 +296,7 @@ func _input(event: InputEvent) -> void:
 				toggle_sound()
 	if event is InputEventMouseMotion and touch_id == -1:
 		pointer = event.position
-		if overlay.is_empty() and event.position.y > 195.0:
+		if overlay.is_empty() and is_play_position(event.position):
 			set_aim(event.position.x)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and touch_id == -1:
 		if event.pressed:
@@ -266,7 +310,7 @@ func _input(event: InputEvent) -> void:
 		elif not event.pressed and event.index == touch_id:
 			handle_release(event.position)
 			touch_id = -1
-	if event is InputEventScreenDrag and event.index == touch_id and overlay.is_empty():
+	if event is InputEventScreenDrag and event.index == touch_id and overlay.is_empty() and is_play_position(event.position):
 		pointer = event.position
 		set_aim(event.position.x)
 
@@ -293,12 +337,12 @@ func handle_press(position: Vector2) -> void:
 		select_tool("bomb")
 	elif COIN_RECT.has_point(position):
 		overlay = "shop"
-	elif Rect2(5, 199, 475, 634).has_point(position):
+	elif is_play_position(position):
 		set_aim(position.x)
 		pointer_down = true
 
 func handle_release(position: Vector2) -> void:
-	if pointer_down and overlay.is_empty() and Rect2(5, 199, 475, 634).has_point(position):
+	if pointer_down and overlay.is_empty() and is_play_position(position):
 		if selected_tool.is_empty():
 			set_aim(position.x)
 			drop_animal()
@@ -328,6 +372,7 @@ func use_tool(position: Vector2) -> void:
 	if selected_tool == "hammer" and hammers > 0:
 		burst(target.center, Data.COLORS[target.level])
 		world.bodies.erase(target)
+		world.wake_all()
 		hammers -= 1
 	elif selected_tool == "bomb" and bombs > 0:
 		burst(target.center, Color("d6c3fa"))
@@ -338,11 +383,12 @@ func use_tool(position: Vector2) -> void:
 
 func modal_press(position: Vector2) -> void:
 	if overlay == "shop":
-		if Rect2(145, 440, 105, 97).has_point(position):
-			buy_tool("hammer", 50)
-		elif Rect2(289, 440, 105, 97).has_point(position):
-			buy_tool("bomb", 80)
-	if PRIMARY_RECT.has_point(position):
+		if SHOP_HAMMER_RECT.has_point(position):
+			buy_tool("hammer")
+		elif SHOP_BOMB_RECT.has_point(position):
+			buy_tool("bomb")
+	var primary := SHOP_PRIMARY_RECT if overlay == "shop" else PRIMARY_RECT
+	if primary.has_point(position):
 		sound.tap()
 		if overlay in ["gameover", "restart"]:
 			reset_game()
@@ -357,11 +403,21 @@ func modal_press(position: Vector2) -> void:
 			reset_game()
 			overlay = "home"
 
-func buy_tool(tool: String, price: int) -> void:
+func purchases_left(tool: String) -> int:
+	return maxi(0, TOOL_PURCHASE_LIMIT - int(tool_purchases.get(tool, TOOL_PURCHASE_LIMIT)))
+
+func buy_tool(tool: String) -> bool:
+	if not TOOL_PRICES.has(tool):
+		return false
+	if purchases_left(tool) == 0:
+		show_toast("No more " + tool + " purchases this cup.")
+		return false
+	var price: int = TOOL_PRICES[tool]
 	if coins < price:
 		show_toast("Keep merging to earn more coins!")
-		return
+		return false
 	coins -= price
+	tool_purchases[tool] += 1
 	if tool == "hammer":
 		hammers += 1
 	else:
@@ -369,6 +425,7 @@ func buy_tool(tool: String, price: int) -> void:
 	save_settings()
 	show_toast("One more " + tool + " for this cup!")
 	sound.tap()
+	return true
 
 func toggle_sound() -> void:
 	sound.enabled = not sound.enabled
@@ -399,29 +456,30 @@ func _draw() -> void:
 	draw_aim()
 	for body in world.bodies:
 		if not body.spilled:
-			Painter.paint(self, body.level, body.center, body.radius, body.expression, world.render_outline(body))
+			Painter.paint_body(self, body, world)
 	Art.cup_front(self)
 	for body in world.bodies:
 		if body.spilled:
-			Painter.paint(self, body.level, body.center, body.radius, body.expression, world.render_outline(body))
+			Painter.paint_body(self, body, world)
 	for p in particles:
 		draw_circle(p.position, p.radius, Color(p.color, minf(p.life * 2.0, 1.0)), true, -1, true)
 	for p in popups:
 		label(p.text, p.position, 26, Color("934718"))
 	draw_header()
-	Art.asset(self, "chain", Rect2(19, 853, 502, 72))
+	Art.asset(self, "chain", CHAIN_RECT)
 	label("MOVE TO AIM  ·  CLICK OR RELEASE TO DROP", Vector2(270, 950), 11)
 	if total_drops == 0 and overlay.is_empty():
-		label("A little cup of happiness", Vector2(265, 480), 19, Color("a86c4a"))
-		label("Match two friends. Make a bigger one.", Vector2(265, 505), 12, Color("a86c4a"))
+		label("A little cup of happiness", Vector2(265, 480 + World.Layout.SHIFT_Y), 19, Color("a86c4a"))
+		label("Match two friends. Meet someone new.", Vector2(265, 505 + World.Layout.SHIFT_Y), 12, Color("a86c4a"))
 	if not selected_tool.is_empty() and overlay.is_empty():
 		draw_circle(pointer, 115.0 if selected_tool == "bomb" else 28.0, Color(1.0, 0.82, 0.51, 0.22))
 		draw_arc(pointer, 115.0 if selected_tool == "bomb" else 28.0, 0, TAU, 64, Color("ffeab1"), 2.0, true)
 	if not overlay.is_empty():
 		draw_overlay()
 	if toast_time > 0.0:
-		panel(Rect2(82, 816, 376, 30), Color("fff0d9"))
-		label(toast, Vector2(270, 836), 12, INK, false)
+		var toast_rect := Rect2(90, 715, 360, 32) if overlay == "shop" else Rect2(18, 284, 386, 30)
+		panel(toast_rect, Color("fff0d9"))
+		label(toast, toast_rect.get_center() + Vector2(0, 4), 12, INK, false)
 
 func draw_header() -> void:
 	Art.asset(self, "home", HOME_RECT)
@@ -435,17 +493,15 @@ func draw_header() -> void:
 		draw_arc(BOMB_RECT.get_center(), 41, 0, TAU, 64, Color("fff1bd"), 3, true)
 	Art.asset(self, "coin", COIN_RECT)
 	Art.patch(self, "coin", COIN_RECT, Rect2(1280, 83, 129, 47), Rect2(1408, 83, 7, 47))
-	label(str(coins), Vector2(438, 53), 21)
+	label(str(coins), COIN_RECT.position + COIN_RECT.size * Vector2(0.50, 0.69), 20)
 	Art.asset(self, "score", SCORE_RECT)
 	Art.patch(self, "score", SCORE_RECT, Rect2(1133, 258, 264, 73), Rect2(1106, 258, 6, 73))
-	label(str(score), Vector2(441, 129), 25)
+	label(str(score), SCORE_RECT.position + SCORE_RECT.size * Vector2(0.51, 0.77), 23)
 	Art.asset(self, "best", BEST_RECT)
 	Art.patch(self, "best", BEST_RECT, Rect2(1220, 429, 185, 57), Rect2(1396, 429, 6, 57))
-	label(str(best), Vector2(462, 181), 20)
+	label(str(best), BEST_RECT.position + BEST_RECT.size * Vector2(0.63, 0.74), 19)
 	Art.asset(self, "next", NEXT_RECT)
-	var next_center := NEXT_RECT.position + Vector2(174, 240) / Vector2(350, 358) * NEXT_RECT.size
-	draw_circle(next_center, 31.8, Color("ffeacf"), true, -1, true)
-	Painter.paint(self, next_level, next_center, 30.5)
+	Painter.paint(self, next_level, Art.next_preview_center(NEXT_RECT), Art.next_preview_radius(NEXT_RECT))
 	Art.asset(self, "gear", PAUSE_RECT)
 	Art.asset(self, "stats", STATS_RECT)
 	Art.asset(self, "sound_on" if sound.enabled else "sound_off", SOUND_RECT)
@@ -469,9 +525,13 @@ func draw_aim() -> void:
 			var b: Vector2 = body.points[(i + 1) % body.points.size()]
 			if aim_x >= minf(a.x, b.x) and aim_x <= maxf(a.x, b.x) and absf(a.x - b.x) > 0.001:
 				endpoint = minf(endpoint, lerpf(a.y, b.y, (aim_x - a.x) / (b.x - a.x)))
-	draw_dashed_line(Vector2(aim_x, 182), Vector2(aim_x, 267 - radius - 7), Color("fff5e5"), 3.0, 10.0)
-	draw_dashed_line(Vector2(aim_x, 269 + radius + 8), Vector2(aim_x, maxf(350, endpoint - 4)), Color(1.0, 0.97, 0.89, 0.8), 2.8, 10.0)
-	Painter.paint(self, current_level, Vector2(aim_x, 269 + sin(elapsed * 2.0) * 1.3), radius)
+	var origin := drop_position()
+	var line_start := origin.y + radius + 8.0
+	# Stop at the first animal even above the rim; never draw a line backwards
+	# through an overflowing stack or connect it to the relocated NEXT card.
+	if endpoint - 4.0 > line_start:
+		draw_dashed_line(Vector2(aim_x, line_start), Vector2(aim_x, endpoint - 4.0), Color(1.0, 0.97, 0.89, 0.8), 2.8, 10.0)
+	Painter.paint(self, current_level, origin, radius)
 	if combo >= 2 and combo_timer > 0:
 		label("%d x COMBO!" % combo, Vector2(265, 203), 17)
 
@@ -492,22 +552,25 @@ func draw_overlay() -> void:
 			subtitle = "A friend landed outside the cup."
 		"restart":
 			title = "A FRESH CUP?"
-			subtitle = "Your best score and coins will stay."
+			subtitle = "Best stays. Coins and tools reset."
 		"stats":
 			title = "YOUR LITTLE RECORDS"
 			subtitle = "Every little merge counts."
 		"shop":
 			title = "A LITTLE HELP"
-			subtitle = "Earn coins by merging friends."
+			subtitle = "Up to 3 of each tool per cup."
 	Painter.paint(self, 0, Vector2(270, 293), 31, 2 if overlay == "gameover" else 0)
 	label(title, Vector2(270, 353), 23)
 	label(subtitle, Vector2(270, 382), 13, Color("a47050"), false)
 	if overlay == "shop":
 		label("%d COINS" % coins, Vector2(270, 418), 21)
-		Art.asset(self, "hammer", Rect2(145, 440, 105, 97))
-		Art.asset(self, "bomb", Rect2(289, 440, 105, 97))
-		label("50 coins", Vector2(197, 541), 14)
-		label("80 coins", Vector2(342, 541), 14)
+		for tool in ["hammer", "bomb"]:
+			var rect: Rect2 = SHOP_HAMMER_RECT if tool == "hammer" else SHOP_BOMB_RECT
+			Art.asset(self, tool, rect)
+			badge(rect, hammers if tool == "hammer" else bombs)
+			label("%d coins" % TOOL_PRICES[tool], Vector2(rect.get_center().x, 539), 14)
+			var remaining := purchases_left(tool)
+			label("%d / 3 left" % remaining if remaining > 0 else "SOLD OUT", Vector2(rect.get_center().x, 561), 13, Color("a47050"))
 	elif overlay == "stats":
 		label("BEST     %d" % best, Vector2(270, 433), 26)
 		label("%d merges   ·   %d coins" % [lifetime_merges, coins], Vector2(270, 478), 18)
@@ -519,12 +582,12 @@ func draw_overlay() -> void:
 		label(str(best), Vector2(359, 467), 30)
 		label("Only a friend falling outside", Vector2(270, 506), 13, Color("a47050"), false)
 		label("and touching the table ends your game.", Vector2(270, 526), 13, Color("a47050"), false)
-	Art.asset(self, "restart" if overlay in ["gameover", "restart"] else "play", PRIMARY_RECT)
+	Art.asset(self, "restart" if overlay in ["gameover", "restart"] else "play", SHOP_PRIMARY_RECT if overlay == "shop" else PRIMARY_RECT)
 	if overlay in ["pause", "home"]:
 		Art.asset(self, "restart", SECONDARY_RECT)
 	elif overlay in ["gameover", "restart"]:
 		Art.asset(self, "home_long", SECONDARY_RECT)
-	else:
+	elif overlay != "shop":
 		label("Soft friends. Big little moments.", Vector2(270, 709), 14, Color("ac7958"), false)
 
 func draw_gallery() -> void:
@@ -532,12 +595,65 @@ func draw_gallery() -> void:
 	label("ORIGINAL ASSET EXPRESSIONS", Vector2(270, 48), 20)
 	for row in 3:
 		label(["HAPPY", "SQUEEZED", "SPIRAL EYES + TEARS"][row], Vector2(270, 107 + row * 274), 18)
-		for level in 7:
-			var col := level % 4
-			var y := 162.0 + row * 274 + (105 if level >= 4 else 0)
-			var x := 66.0 + col * 132 + (66 if level >= 4 else 0)
+		for level in Data.NAMES.size():
+			var col := level % 5
+			var y := 162.0 + row * 274 + (105 if level >= 5 else 0)
+			var x := 54.0 + col * 108
 			Painter.paint(self, level, Vector2(x, y), 40, row)
 			label(Data.NAMES[level], Vector2(x, y + 56), 12)
+
+func seed_sliding_regression() -> void:
+	world.clear()
+	world.allow_merges = false
+	for seed in [[4, 282, 687], [1, 170, 708], [0, 142, 625], [1, 199, 585], [1, 353, 570], [0, 397, 640]]:
+		world.add_animal(seed[0], Vector2(seed[1], seed[2]))
+	total_drops = 20
+	score = 310
+	best = 4380
+	current_level = 2
+	next_level = 2
+	aim_x = 200.0
+
+func seed_ten_animals() -> void:
+	world.clear()
+	world.allow_merges = false
+	# All new species, final unicorn and earlier species in an actual soft pile.
+	for seed in [[9, 257, 663], [0, 145, 746], [1, 376, 742], [8, 175, 481], [7, 354, 477], [6, 260, 277]]:
+		world.add_animal(seed[0], Vector2(seed[1], seed[2]))
+	total_drops = 30
+	score = 2260
+	best = 4380
+	current_level = 0
+	next_level = 2
+	aim_x = 260.0
+
+func seed_overlap_regression() -> void:
+	world.clear()
+	world.allow_merges = false
+	for seed in [[0, 158, 710], [1, 220, 708], [2, 169, 615], [4, 297, 641], [5, 300, 467], [6, 263, 262]]:
+		world.add_animal(seed[0], Vector2(seed[1], seed[2]))
+	for frame in 180:
+		world.step(1.0 / 60.0)
+	total_drops = 20
+	score = 860
+	best = 4380
+	current_level = 1
+	next_level = 0
+	aim_x = 265.0
+
+func seed_overflow_layout() -> void:
+	world.clear()
+	world.allow_merges = false
+	for seed in [[6, 240, 662], [5, 355, 463], [4, 175, 436], [1, 382, 705], [2, 253, 285], [1, 118, 309]]:
+		world.add_animal(seed[0], Vector2(seed[1], seed[2]))
+	for frame in 90:
+		world.step(1.0 / 60.0)
+	total_drops = 20
+	score = 860
+	best = 4380
+	current_level = 1
+	next_level = 0
+	aim_x = 265.0
 
 func seed_wall_regression() -> void:
 	world.clear()

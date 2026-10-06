@@ -22,31 +22,35 @@ func run() -> void:
 	var started := Time.get_ticks_msec()
 	test_evolution()
 	test_merge_rules()
+	test_gentle_merge()
 	test_squash_and_recovery()
+	test_soft_load()
 	test_rigid_cup_regressions()
 	test_stacking()
 	test_overflow()
 	test_original_assets()
 	test_game_flow()
+	test_top_drop_controls()
+	await test_music()
 	print("RESULT: ", checks - failures, "/", checks, " passed in ", Time.get_ticks_msec() - started, " ms")
 	quit(1 if failures else 0)
 
 func test_evolution() -> void:
-	check(Data.NAMES == ["Hamster", "Chick", "Bunny", "Capybara", "Cat", "Dog", "Unicorn"], "fixed seven-animal order in English")
+	check(Data.NAMES == ["Hamster", "Chick", "Bunny", "Capybara", "Cat", "Dog", "Fox", "Sheep", "Penguin", "Unicorn"], "fixed ten-animal order in English")
 	check(Data.RADII[0] == 39.0, "hamster equals the previous bunny size")
-	var sizes_increase := true
-	for i in range(1, 7):
-		sizes_increase = sizes_increase and Data.RADII[i] > Data.RADII[i - 1]
-	check(sizes_increase, "strictly increasing size per evolution")
+	check(Data.RADII == [39.0, 48.0, 59.0, 72.0, 86.0, 102.0, 120.0, 95.0, 83.0, 138.0], "approved sizes include both late shrink stages and largest final unicorn")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 720
-	var drop_counts := [0, 0, 0]
+	var drop_counts := [0, 0, 0, 0]
 	for i in 10000:
 		drop_counts[Data.random_drop(rng)] += 1
-	check(drop_counts[0] > 4500 and drop_counts[0] < 5100 and drop_counts[2] > 1700 and drop_counts[2] < 2300, "drop pool and weighted probabilities")
+	var weights_ok := true
+	for level in 4:
+		weights_ok = weights_ok and abs(drop_counts[level] - (1000 if level == 3 else 3000)) < 200
+	check(weights_ok, "four-species drop pool uses 30 / 30 / 30 / 10 probabilities")
 
 func test_merge_rules() -> void:
-	for level in 7:
+	for level in Data.NAMES.size():
 		var world := World.new()
 		var r: float = Data.RADII[level]
 		var a = world.add_animal(level, Vector2(270 - r + 1, 150))
@@ -56,7 +60,7 @@ func test_merge_rules() -> void:
 		var events: Array = []
 		for i in 4:
 			events.append_array(world.step(1.0 / 60.0))
-		if level < 6:
+		if level < Data.LAST_LEVEL:
 			check(events.size() == 1 and world.bodies.size() == 1 and world.bodies[0].level == level + 1, "two " + Data.NAMES[level] + " merge exactly once")
 			if not events.is_empty():
 				check(events[0].points == Data.POINTS[level + 1], "correct score for " + Data.NAMES[level + 1])
@@ -79,6 +83,35 @@ func test_merge_rules() -> void:
 		chain += world.step(1.0 / 60.0).size()
 	check(chain == 2 and world.bodies.size() == 1 and world.bodies[0].level == 2, "chain reaction creates a rabbit")
 
+func test_gentle_merge() -> void:
+	var world := World.new()
+	var a = world.add_animal(0, Vector2(231, 300))
+	var b = world.add_animal(0, Vector2(309, 300))
+	a.age = 1.0
+	b.age = 1.0
+	world.contacts = [[a, b]]
+	world.merge_contacts()
+	var baby = world.bodies[0]
+	var speed := Vector2.ZERO
+	for i in Body.COUNT:
+		speed += (baby.points[i] - baby.previous[i]) * 120.0 / Body.COUNT
+	check(speed.length() < 0.02, "merge creates no upward impulse in the zero-bounce version")
+	var origin_y: float = baby.center.y
+	var highest_y := origin_y
+	for frame in 10:
+		world.step(1.0 / 60.0)
+		highest_y = minf(highest_y, baby.center.y)
+	check(origin_y - highest_y < 0.001, "free newborn never hops upward before falling")
+	world.clear()
+	a = world.add_animal(0, Vector2(224, World.FLOOR_Y - 43))
+	b = world.add_animal(0, Vector2(301, World.FLOOR_Y - 43))
+	a.age = 1.0
+	b.age = 1.0
+	world.contacts = [[a, b]]
+	world.merge_contacts()
+	baby = world.bodies[0]
+	check(baby.center.y > World.FLOOR_Y - 45 and cup_penetration(world, baby) < 0.01, "floor merge flattens in place instead of snapping upward to fit a rigid circle")
+
 func test_squash_and_recovery() -> void:
 	var body := Body.new(1, 4, Vector2(270, 600))
 	var circular := true
@@ -91,7 +124,8 @@ func test_squash_and_recovery() -> void:
 	for i in 60:
 		body.update_expression(1.0 / 60.0)
 	check(body.expression == 2, "extreme compression triggers spiral eyes and tears")
-	for i in 300:
+	# Recovery is deliberately slower; still require a circular, happy rest state.
+	for i in 600:
 		body.solve_shape()
 		body.update_expression(1.0 / 60.0)
 	check(body.pressure < 0.02 and body.expression == 0, "elastic recovery restores circle and happy face")
@@ -108,10 +142,29 @@ func test_squash_and_recovery() -> void:
 		var half_gap := lerpf(125.0, 85.0, minf(1.0, frame / 90.0))
 		for iteration in 5:
 			squeezed.solve_shape()
-			world.segment_collision(squeezed, Vector2(270 - half_gap, 100), Vector2(270 - half_gap, 1000))
-			world.segment_collision(squeezed, Vector2(270 + half_gap, 100), Vector2(270 + half_gap, 1000))
+			# Frictionless walls no longer slow the fall. Keep this isolated
+			# squeeze fixture's walls long enough for the entire 1.25-second drop.
+			world.segment_collision(squeezed, Vector2(270 - half_gap, 100), Vector2(270 - half_gap, 3000))
+			world.segment_collision(squeezed, Vector2(270 + half_gap, 100), Vector2(270 + half_gap, 3000))
 		squeezed.update_expression(1.0 / 120.0)
 	check(squeezed.bounds().size.x < squeezed.radius * 1.5 and squeezed.expression > 0, "actual opposing wall collisions deform the soft body")
+
+func test_soft_load() -> void:
+	var world := World.new()
+	world.allow_merges = false
+	var cat = world.add_animal(4, Vector2(263, 658))
+	world.add_animal(6, Vector2(263, 450))
+	var min_y := INF
+	var max_y := -INF
+	for frame in 600:
+		world.step(1.0 / 60.0)
+		if frame > 480:
+			min_y = minf(min_y, cat.center.y)
+			max_y = maxf(max_y, cat.center.y)
+	# The v2.1 material's strain in this same fixture measured 0.1031.
+	check(cat.pressure > 0.12, "cat deforms under the fox load (old unicorn size)")
+	check(cat.radius == 86.0 and cat.signed_area() / cat.rest_area > 0.98, "extra squash preserves the original radius and at least 98 percent of area")
+	check(max_y - min_y < 2.0, "settled soft stack does not keep bouncing vertically")
 
 func test_stacking() -> void:
 	var world := World.new()
@@ -142,7 +195,7 @@ func test_stacking() -> void:
 	var min_area := 1.0
 	for body in world.bodies:
 		min_area = minf(min_area, body.signed_area() / body.rest_area)
-	check(min_area > 0.72, "stacked animals retain their volume")
+	check(min_area > 0.97, "stacked animals retain at least 97 percent of their volume")
 	print("METRIC: physics mean ", snappedf(ms_per_step, 0.01), " ms/frame; maximum strain ", snappedf(max_strain, 0.01), "; minimum area ratio ", snappedf(min_area, 0.01))
 
 func cup_penetration(world, body) -> float:
@@ -238,7 +291,7 @@ func test_overflow() -> void:
 	world.update_spill_state(body)
 	check(not world.has_grounded_spill(), "remaining above the rim never triggers a countdown loss")
 	world.clear()
-	body = world.add_animal(0, Vector2(30, 600))
+	body = world.add_animal(0, Vector2(30, World.GROUND_Y - 208))
 	world.update_spill_state(body)
 	check(body.spilled and not world.has_grounded_spill(), "outside animal still airborne does not end the game")
 	for i in Body.COUNT:
@@ -265,8 +318,10 @@ func test_overflow() -> void:
 	check(lost and not premature, "full rim escape and fall ends only at outside ground contact")
 	world.clear()
 	world.allow_merges = false
-	for frame in 1080:
-		if frame % 150 == 0 and frame < 900:
+	# Softer bodies can settle into different stable arrangements. Keep adding
+	# animals until the cup truly overflows, without requiring a six-drop quota.
+	for frame in 2160:
+		if frame % 150 == 0 and frame < 1500:
 			world.add_animal(5 if frame % 300 == 0 else 4, Vector2(195 if frame % 300 == 0 else 335, 210))
 		world.step(1.0 / 60.0)
 		if world.has_grounded_spill():
@@ -275,7 +330,7 @@ func test_overflow() -> void:
 
 func test_original_assets() -> void:
 	var painter = load("res://scripts/sprite_painter.gd")
-	check(painter.REGIONS.size() == 21, "all seven animals use all three supplied expression rows")
+	check(painter.REGIONS.size() == 21 and painter.NEW_REGIONS.size() == 9, "all ten animals have three supplied expression rows")
 	check(painter.SHEET.get_width() == 1916 and painter.SHEET.get_height() == 821, "unmodified original animal atlas is loaded")
 	var art = load("res://scripts/asset_art.gd")
 	check(art.UI.get_width() == 1536 and art.CUP.get_width() == 1122, "original button and cup artwork is loaded")
@@ -299,20 +354,83 @@ func test_game_flow() -> void:
 	check(game.world.bodies[0].center == old_position, "pause freezes simulation")
 	game.overlay = ""
 	game.on_merge({"level": 6, "points": 250, "position": Vector2(270, 600)})
-	check(game.score == 250 and game.highest_level == 6 and game.toast_time > 0, "score and unicorn celebration are connected")
+	check(game.score == 250 and game.highest_level == 6 and game.toast_time == 0, "score and discoveries update without first-merge greetings")
 	game.reset_game()
 	check(game.world.bodies.is_empty() and game.score == 0 and game.overlay.is_empty(), "restart clears the game state")
 	check(game.best == 250, "restart preserves best score")
+	check(game.coins == 0 and game.hammers == 0 and game.bombs == 0, "restart clears coins and tool inventory")
+	game.coins = 280
+	game.buy_tool("hammer")
 	game.world.add_animal(0, Vector2(270, 600))
 	game.select_tool("hammer")
 	game.use_tool(Vector2(270, 600))
-	check(game.world.bodies.is_empty() and game.hammers == 2, "asset hammer button removes one animal and consumes one charge")
-	game.coins = 100
-	game.buy_tool("bomb", 80)
-	check(game.coins == 20 and game.bombs == 4, "local coin purchase updates balance and inventory")
+	check(game.world.bodies.is_empty() and game.hammers == 0, "asset hammer button removes one animal and consumes one charge")
+	game.buy_tool("bomb")
+	check(game.coins == 0 and game.bombs == 1, "100-coin hammer and 180-coin bomb update balance and inventory")
 	game.selected_tool = "bomb"
 	game.world.add_animal(0, Vector2(240, 600))
 	game.world.add_animal(1, Vector2(310, 600))
 	game.use_tool(Vector2(240, 600))
-	check(game.world.bodies.is_empty() and game.bombs == 3, "bomb clears nearby animals")
+	check(game.world.bodies.is_empty() and game.bombs == 0, "bomb clears nearby animals")
 	game.free()
+
+func test_top_drop_controls() -> void:
+	var game := Main.new()
+	game.persistence_enabled = false
+	root.add_child(game)
+	game.sound.enabled = false
+	game.sound.set_music(false)
+	var piled = game.world.add_animal(2, Vector2(270, 290))
+	game.current_level = 1
+	var move := InputEventMouseMotion.new()
+	move.position = Vector2(270, 110)
+	game._input(move)
+	check(absf(game.aim_x - 270.0) < 0.01, "pointer can aim in the new top launch area")
+	game.handle_press(move.position)
+	game.handle_release(move.position)
+	var launched = game.world.bodies.back()
+	check(game.total_drops == 1 and launched.center.y < 140.0 and not launched.bounds().intersects(piled.bounds()), "top release creates a real animal above the overflowing stack")
+	game.cooldown = 0.0
+	game.handle_press(Vector2(250, 180))
+	game.handle_release(Main.NEXT_RECT.get_center())
+	check(game.total_drops == 1, "releasing a drag over the NEXT card does not accidentally drop")
+	game.handle_press(Main.NEXT_RECT.get_center())
+	game.handle_release(Main.NEXT_RECT.get_center())
+	check(game.total_drops == 1, "the relocated NEXT card is display-only")
+	game.free()
+
+func test_music() -> void:
+	var game := Main.new()
+	game.persistence_enabled = false
+	root.add_child(game)
+	game.overlay = "pause"
+	game.sound.enabled = false
+	var player: AudioStreamPlayer = game.sound.music_player
+	check(game.sound.music_enabled and player.playing, "supplied MP3 starts automatically on a fresh launch")
+	check(player.stream is AudioStreamMP3 and player.stream.get_length() > 52.0 and player.stream.get_length() < 53.0, "music uses the supplied 52-second MP3")
+	check(absf(db_to_linear(player.volume_db) - 0.30) < 0.0001, "initial music amplitude is 30 percent")
+	check(player.stream.loop and player.stream.loop_offset == 0.0, "MP3 is configured to loop from the beginning")
+	game.overlay = ""
+	game.handle_press(Main.MUSIC_RECT.get_center())
+	check(not game.sound.music_enabled and not player.playing, "existing music button stops the MP3 independently of effects")
+	var saved := ConfigFile.new()
+	game.sound.store_music(saved)
+	game.sound.set_music(true)
+	game.sound.restore_music(saved)
+	check(not player.playing, "music off preference survives save and restore")
+	var legacy := ConfigFile.new()
+	legacy.set_value("game", "music", false)
+	game.sound.restore_music(legacy)
+	check(player.playing, "old synthesized-music default migrates to MP3 autoplay")
+	game.handle_press(Main.MUSIC_RECT.get_center())
+	game.handle_press(Main.MUSIC_RECT.get_center())
+	check(player.playing and game.sound.music_enabled, "existing music button restarts the MP3")
+	# Give the audio thread time to apply the queued stop/start operations before
+	# seeking. A seek in the same frame can be superseded by the queued play.
+	await create_timer(0.20).timeout
+	player.seek(player.stream.get_length() - 0.10)
+	await create_timer(0.40).timeout
+	check(player.playing and player.get_playback_position() < 1.5, "playback actually wraps to the start after reaching the MP3 end")
+	game.sound.set_music(false)
+	game.free()
+	await create_timer(0.15).timeout

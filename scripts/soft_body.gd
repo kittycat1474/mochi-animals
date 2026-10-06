@@ -4,6 +4,9 @@ extends RefCounted
 
 const Data = preload("res://scripts/animal_data.gd")
 const COUNT := 20
+const SHAPE_STIFFNESS := 0.005
+const EDGE_STIFFNESS := 0.075
+const AREA_STIFFNESS := 0.65
 var id: int
 var level: int
 var radius: float
@@ -12,6 +15,8 @@ var points := PackedVector2Array()
 var previous := PackedVector2Array()
 var rest := PackedVector2Array()
 var center := Vector2.ZERO
+var geometry_points := PackedVector2Array()
+var geometry_bounds := Rect2()
 var rest_area: float
 var edge_length: float
 var age := 0.0
@@ -25,6 +30,14 @@ var boundary_center := Vector2.ZERO
 var contacted := false
 var dead := false
 var born_scale := 1.0
+var sleeping := false
+var quiet_time := 0.0
+# A body owns its artwork cache, so merging/removing it releases the mesh too.
+var artwork_mesh: ArrayMesh
+var artwork_points := PackedVector2Array()
+var artwork_expression := -1
+var artwork_side := 0
+var artwork_squeeze := 0.0
 
 func _init(body_id: int = 0, tier: int = 0, origin: Vector2 = Vector2.ZERO, velocity: Vector2 = Vector2.ZERO) -> void:
 	id = body_id
@@ -48,13 +61,20 @@ func signed_area() -> float:
 	return total * 0.5
 
 func update_center() -> void:
+	if geometry_points == points:
+		return
 	center = Vector2.ZERO
+	geometry_bounds = Rect2(points[0], Vector2.ZERO)
 	for p in points:
 		center += p
+		geometry_bounds = geometry_bounds.expand(p)
 	center /= COUNT
+	geometry_points = points.duplicate()
 
 func integrate(dt: float) -> void:
 	age += dt
+	if sleeping:
+		return
 	contacted = false
 	var average_motion := Vector2.ZERO
 	for i in COUNT:
@@ -62,13 +82,15 @@ func integrate(dt: float) -> void:
 	average_motion /= COUNT
 	for i in COUNT:
 		var current := points[i]
-		var motion := (current - previous[i]).lerp(average_motion, 0.075) * 0.997
+		var motion := (current - previous[i]).lerp(average_motion, 0.18) * 0.997
 		motion = motion.limit_length(900.0 * dt)
 		points[i] += motion + Vector2(0.0, 1150.0 * dt * dt)
 		previous[i] = current
 	update_center()
 
 func solve_shape() -> void:
+	if sleeping:
+		return
 	update_center()
 	# Rotation-invariant shape memory: it restores a circle without pinning it.
 	var dot_sum := 0.0
@@ -80,14 +102,14 @@ func solve_shape() -> void:
 	var angle := atan2(cross_sum, dot_sum)
 	var rotation := Transform2D(angle, center)
 	for i in COUNT:
-		points[i] += (rotation * rest[i] - points[i]) * 0.025
+		points[i] += (rotation * rest[i] - points[i]) * SHAPE_STIFFNESS
 	# Stretchable edges keep the contour closed, while permitting local dents.
 	for i in COUNT:
 		var j := (i + 1) % COUNT
 		var edge := points[j] - points[i]
 		var length := edge.length()
 		if length > 0.001:
-			var correction := edge * ((length - edge_length) / length) * 0.20
+			var correction := edge * ((length - edge_length) / length) * EDGE_STIFFNESS
 			points[i] += correction
 			points[j] -= correction
 	# Area preservation supplies the soft, incompressible mochi response.
@@ -99,9 +121,21 @@ func solve_shape() -> void:
 		gradients.append(gradient)
 		denominator += gradient.length_squared()
 	if denominator > 0.001:
-		var multiplier := clampf((rest_area - signed_area()) / denominator, -0.8, 0.8) * 0.65
+		var multiplier := clampf((rest_area - signed_area()) / denominator, -0.8, 0.8) * AREA_STIFFNESS
 		for i in COUNT:
 			points[i] += gradients[i] * multiplier
+
+func damp_contact_motion() -> void:
+	if sleeping or not contacted:
+		return
+	var average_motion := Vector2.ZERO
+	for i in COUNT:
+		average_motion += points[i] - previous[i]
+	average_motion /= COUNT
+	for i in COUNT:
+		# Keep bulk sliding, but retain no oscillating per-vertex velocity after
+		# contact. Shape/area constraints still freely deform the silhouette.
+		previous[i] = points[i] - average_motion
 
 func update_expression(dt: float) -> void:
 	update_center()
@@ -123,10 +157,8 @@ func update_expression(dt: float) -> void:
 	born_scale = move_toward(born_scale, 1.0, dt * 2.5)
 
 func bounds() -> Rect2:
-	var rect := Rect2(points[0], Vector2.ZERO)
-	for p in points:
-		rect = rect.expand(p)
-	return rect
+	update_center()
+	return geometry_bounds
 
 func smooth_outline() -> PackedVector2Array:
 	var smooth := PackedVector2Array()
@@ -134,7 +166,11 @@ func smooth_outline() -> PackedVector2Array:
 		var a := points[(i + COUNT - 1) % COUNT]
 		var b := points[i]
 		var c := points[(i + 1) % COUNT]
-		var d := points[(i + 2) % COUNT]
-		for step in 3:
-			smooth.append(b.cubic_interpolate(c, a, d, float(step) / 3.0))
+		# Bezier corner rounding is a convex combination of physics vertices.
+		# Unlike Catmull-Rom, it cannot bulge through a separating contact plane.
+		var start := b.lerp(a, 0.18)
+		var end := b.lerp(c, 0.18)
+		for step in 4:
+			var t := float(step) / 3.0
+			smooth.append(start.lerp(b, t).lerp(b.lerp(end, t), t))
 	return smooth
