@@ -38,7 +38,7 @@ func run() -> void:
 
 func test_layout_and_spawning() -> void:
 	check(Main.NEXT_RECT.end.y < Main.PAUSE_RECT.position.y and Main.NEXT_RECT.end.x == Main.PAUSE_RECT.end.x, "NEXT is directly above the right-hand settings column")
-	check(Main.CHAIN_RECT.position.x == 12 and Main.CHAIN_RECT.end.x == 528 and Main.CHAIN_RECT.end.y < 940, "evolution strip spans the bottom width and clears the instructions")
+	check(Main.CHAIN_RECT.position.x == 12 and Main.CHAIN_RECT.end.x == 528 and Main.CHAIN_RECT.end.y < 952, "evolution strip spans the bottom width with a safe screen margin")
 	check(Art.CHAIN.get_size() == Vector2(2172, 724) and absf(Main.CHAIN_RECT.size.aspect() - Art.CHAIN_REGION.size.aspect()) < 0.001, "latest attachment is sampled without stretching the animals")
 	var game = new_game()
 	check(game.current_level == 1 and game.world.bodies.is_empty(), "new game always starts with one waiting chick and an empty cup")

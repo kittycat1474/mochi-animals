@@ -1,5 +1,9 @@
 # Asset provenance
 
+## v2.9 loading artwork
+
+`assets/loading/reference.png` and `assets/loading/sheet.png` are unchanged copies of the two user attachments dated 2026-10-07 (`codex-clipboard-5160dd30-d154-4a02-8921-28c1e4350974.png` and `codex-clipboard-f935b4c7-7d42-4dcf-bfb6-8e71091a88e9.png`). Godot samples the combined sheet through texture regions for the background, logo, bridge group, loading-bar layers and four unicorn frames. No bitmap editing or image generation was performed. These textures are not used by the gameplay scene; original gameplay artwork is unchanged.
+
 The animal, interface and cup PNGs in `assets/source/` are unchanged copies of the user-provided files. Their rendering uses atlas coordinates, original pixels and Godot clipping meshes, including transparent cup layering. They were not regenerated.
 
 The original background `assets/room.png` was generated with the built-in image generation tool and the imagegen skill. The supplied full-screen interface image was the edit target. The resulting background was copied into the project so the game has no external asset dependency. The later approved three-species sheet is described below.
@@ -24,7 +28,7 @@ The earlier generation prompt requested a transparent 3×3 game sprite sheet mat
 
 ## Approved vertical NEXT capsule (v2.8.1)
 
-`assets/source/next-capsule.png` is a byte-for-byte copy of the user-approved generated image (977×1610). The earlier built-in image-generation request specified a narrow upright cream/apricot pill, rounded cocoa NEXT text, an empty transparent circular preview window, and no animal, ears, paws or background. Integration does not regenerate or edit its pixels. Godot samples (70, 70, 836, 1470) to exclude transparent margins, scales uniformly, and inserts the next animal at source position (484, 960), radius 306.
+`assets/source/next-capsule.png` is a byte-for-byte copy of the user-approved image generated in this conversation at `/Users/mac/.codex/generated_images/01a0eda9-96fd-71b3-9061-54546655b502/exec-21dd59f0-0f04-4f6c-8b14-83a91ee412a3.png` (977×1610). The earlier built-in image-generation request specified a narrow upright cream/apricot pill, rounded cocoa NEXT text, an empty transparent circular preview window, and no animal, ears, paws or background. Integration does not regenerate or edit its pixels. Godot samples (70, 70, 836, 1470) to exclude transparent margins, scales uniformly, and inserts the next animal at source position (484, 960), radius 306.
 
 ## User-provided music (v2.2)
 

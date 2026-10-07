@@ -31,7 +31,7 @@ func overlap(a: PackedVector2Array, b: PackedVector2Array) -> float:
 	return result
 
 func run() -> void:
-	check(World.CUP_TOP == 401 and World.FLOOR_Y == 799 and World.GROUND_Y == 851 and Art.CUP_RECT.position.y == 311, "art, rim, solid floor and spill ground share the 43-unit cup translation")
+	check(World.CUP_TOP == 425 and World.FLOOR_Y == 823 and World.GROUND_Y == 875 and Art.CUP_RECT.position.y == 335, "art, rim, solid floor and spill ground share the 67-unit cup translation")
 	check(not Main.CHAIN_RECT.intersects(Main.NEXT_RECT) and Main.CHAIN_RECT.position.y > World.GROUND_Y, "complete evolution strip clears both the lowered cup and NEXT")
 	check(absf(Main.CHAIN_RECT.size.aspect() - Art.CHAIN_REGION.size.aspect()) < 0.001, "new evolution strip keeps its artwork aspect ratio without transparent padding")
 	check(Sound.MERGE_NOTES.size() == Data.NAMES.size(), "all ten merge levels have a valid sound")

@@ -1,6 +1,26 @@
-# v2.8.1 verification — NEXT artwork only
+# v2.9 verification — loading, layout and local Top 3
 
-Publication note: branch `v2.8.1` contains the approved v2.8.1 desktop source; `main` retains v2.1 unchanged. References below to desktop builds, local backups, screenshots and "no GitHub upload" describe the original implementation/verification runs before this publication. Those local artifacts are not included in the repository; the recorded game rules and test results are unchanged.
+Godot 4.7.1 on macOS / Apple M2. Desktop-only update; no GitHub or Netlify changes.
+
+**234 / 234 final automated checks passed**: gameplay/audio/cup 86, non-overlap 13, sleep/wake 15, sliding 6, slime 9, ten animals 24, round economy 48, NEXT capsule 9, loading/records 24. New checks cover empty ranks, descending order, tied scores, one record per completed cup, real outside-ground game-over recording, restart exclusion, legacy BEST migration, fresh-instance persistence, malformed entries, aligned cup boundaries, loading atlas bounds and actual threaded-load completion. Saves used isolated temporary fixtures, not the player's save.
+
+Cup translation is now 67 total (+24 from v2.8.1): rim 425, interior floor 823, outside loss ground 875. The strip is y=894 to ~951. Original gameplay art, animal data, physics solver, soft-body parameters, sprite painter and audio scripts remain unchanged.
+
+Test-fixture note: the first run left the crowded rest fixture at its previous absolute screen positions, increasing release heights relative to the lowered cup. That different arrangement failed two rest checks (0.254-pixel maximum contour step and 8.157-pixel four-second drift). The fixture now translates its seed positions with the cup to retain the same relative scenario; all 15 checks pass, with the crowded case asleep after 6.98 seconds and zero final contour movement. No solver adjustment or relaxed tolerance was used. These finite checks do not guarantee every possible pile settles equally quickly.
+
+Actual loading, fresh-cup and Top 3 screenshots were captured and inspected. Startup transitions automatically into the game; the footer is absent and the strip remains fully visible. The loader's progress uses real resource status, not simulated percentages; only its minimum presentation hold and unicorn animation are time-based. Reference images are copied byte-for-byte and are startup-only.
+
+The actual Compatibility-renderer regression also passed: resting cup pixels are byte-identical across 120 further physics frames, and stationary animals reuse the same GPU meshes.
+
+The universal Mac v2.9.0 export, ZIP integrity check, and strict deep ad-hoc code-signature verification passed. App: `builds/Mac-v2.9/Mochi Animals v2.9.app`; archive: `builds/MochiAnimals-v2.9-Mac.zip`. Previous builds are retained, with source backup at `builds/backups/source-before-v2.9.zip` (integrity checked). This is not Apple-notarized.
+
+The packaged app independently launched through the loader, reached the fresh game, captured `builds/Mac-v2.9/preview-game.png`, and exited successfully. Its screenshot was visually inspected. No script/runtime errors occurred; the shutdown ObjectDB warning below remains. Loading and leaderboard previews are saved alongside it.
+
+The unthreaded Web export contains a 38 MB WASM, 16 MB PCK, the custom startup shell and supplied 2.3 MB cover. A local Chromium run at 390×844 loaded the cover, removed it after engine startup, entered the game and reported no console/page errors. Production deploy `6ac651478687559948a7ffdb` was published atomically to `https://mochianimals.netlify.app`; the live URL and deploy state were rechecked after publication. This is a browser-size simulation on the Mac, not a physical-phone test.
+
+Some sandboxed headless runs report an unrelated macOS system certificate lookup error; checks still complete. Automated shutdown currently reports ObjectDB resource warnings (2 in the render regression, 9–11 in threaded-loader checks/previews). No sustained performance claim is made.
+
+## Historical v2.8.1 verification — NEXT artwork only
 
 **57 / 57 focused checks passed**: nine new capsule checks and the existing 48 round-economy/UI checks. The approved PNG is byte-identical to the generated original, retains transparent background/window, and is uniformly scaled. The live animal preview fits within the circular opening. NEXT keeps its top/right anchors and height; only its width/input footprint follows the narrower capsule. The existing aiming formula itself is unchanged and now clears NEXT at the normal right release bound for all four droppable animals.
 

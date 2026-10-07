@@ -1,12 +1,10 @@
-# Mochi Animals — Asset Edition (v2.8.1)
+# Mochi Animals — Asset Edition (v2.9)
 
 A complete, local Godot 4.7 portrait merging game, with English UI and the supplied animal, button, and cup artwork. Tested with Godot 4.7.1 on Apple Silicon.
 
-This version is published on branch **`v2.8.1`**. The **`main`** branch retains the original v2.1 version.
-
 ## Play
 
-Clone or download this repository, import `project.godot` in Godot 4.7 and press **F5**. This repository contains the complete v2.8.1 source, assets and tests. Local Mac apps, historical build archives and Godot caches are deliberately excluded. To build a Mac app, install matching export templates and use the included macOS export preset. The window title explicitly says **v2.8.1**.
+Import `project.godot` in Godot 4.7 and press **F5**, or open the Mac app in `builds/Mac-v2.9/Mochi Animals v2.9.app`. Quit a previously running version before opening the updated app. The window title explicitly says **v2.9**.
 
 - Mouse: move to aim; click the play area to drop.
 - Touch: drag and release to drop.
@@ -14,7 +12,17 @@ Clone or download this repository, import `project.godot` in Godot 4.7 and press
 - Home keeps the current cup available through PLAY. RESTART starts a new cup after confirmation.
 - Sound and music have separate switches. The supplied MP3 starts automatically, loops, and plays at 30% amplitude. The music button remembers your choice for subsequent launches.
 
-### v2.8.1 approved NEXT capsule
+### v2.9 loading page, lower cup and local Top 3
+
+Startup now uses the supplied village/logo/bridge/loading-bar/unicorn sheet. The bar reads Godot's threaded resource-loading progress, with a short presentation hold (minimum 1.2 seconds, at least 0.25 seconds at completion), then opens the game automatically. The four supplied unicorn frames animate above the bar. New artwork is exclusive to startup: gameplay animals, room, NEXT, cup and buttons keep their existing assets.
+
+The bottom instruction sentence is removed. The cup artwork, rim, solid floor and outside spill ground move down another 24 logical pixels; the evolution strip moves down 20 pixels, keeping its proportions and a 9-pixel bottom margin. Animal sizes, physical parameters, aiming height, music, drop probabilities and economy are unchanged. Extra headroom reduces crowding near the waiting animal; it is not an unlimited guarantee against a sufficiently tall overflowing pile.
+
+The stats button opens YOUR TOP 3, stored only on this device. A completed cup records once, sorted highest first; tied scores from separate cups count. Empty ranks display --. Restarting/abandoning a cup does not add a completed score. Existing BEST remains live and is preserved; an older save with only BEST contributes one historical record, without inventing the missing two. All previews/tests use disabled persistence or isolated save files.
+
+The same v2.9 source is exported for unthreaded Godot Web and published at https://mochianimals.netlify.app. The browser shell uses the supplied loading illustration while the engine downloads, then the in-game loading scene takes over. `netlify.toml` publishes `builds/Web`, sets immutable caching for versioned engine/package files, and keeps `index.html` revalidated. `.netlify/` is ignored so local site-link state is never committed. GitHub uses a separate `v2.9` branch; `main` and `v2.8.1` remain unchanged. Previous Mac builds and `builds/backups/source-before-v2.9.zip` are retained.
+
+### v2.8.1 approved NEXT capsule (history)
 
 Only NEXT is visually replaced with the approved cream/apricot vertical capsule. Its top/right anchors and height are unchanged; the width follows the asset's aspect ratio. The transparent window contains the existing live next-animal sprite. The input rectangle now matches the narrow capsule, so the existing aim formula no longer reserves the old wide card's space. No aiming algorithm, other UI geometry, animal sizes, drop probabilities, coins, tools, physics, cup, music or save rules were changed. The approved PNG is copied unchanged to `assets/source/next-capsule.png`.
 
@@ -24,7 +32,7 @@ NEXT now sits above the settings column at the top right. The waiting animal cle
 
 Every cup starts with a Chick, zero coins, zero hammers and zero bombs. Subsequent drops are Hamster 30%, Chick 30%, Bunny 30%, Capybara 10%. Merge coin rewards remain unchanged: merge points divided by ten. A hammer costs 100 coins and a bomb costs 180; each type can be purchased at most three times per cup. The shop shows remaining exchanges and SOLD OUT. Using a tool never restores a purchase allowance. A fresh cup clears the balance, inventory and counters; resuming the same cup does not. BEST and audio preferences are preserved, including when upgrading an old save.
 
-The v2.8.1 source snapshot includes these v2.8 changes. Previous desktop apps and source backups remain local and are not included in this repository.
+This update stays local to the desktop project. Previous apps and `builds/backups/source-before-v2.8.zip` are retained; no GitHub upload.
 
 ### v2.7 ten animals and lower cup (history)
 
@@ -143,11 +151,14 @@ godot --headless --path . --script res://tests/test_rest.gd
 godot --headless --path . --script res://tests/test_sliding.gd
 godot --path . --script res://tests/test_render_stability.gd -- --showcase --render-output=/absolute/existing/directory
 godot --headless --path . --script res://tests/test_round_economy.gd
-godot --headless --path . --export-release macOS builds/MochiAnimals-v2.8.1-Mac.zip
+godot --headless --path . --script res://tests/test_loading_records.gd
+godot --headless --path . --export-release macOS builds/MochiAnimals-v2.9-Mac.zip
 ```
 
 Visual QA options after `--`: `--showcase`, `--capture=/absolute/path.png`, `--capture-mode=expressions`, `--capture-mode=home`, `--capture-mode=wall-regression`, `--capture-mode=overflow-layout`, `--capture-mode=overlap-regression`, `--capture-mode=sliding-regression`. The wall regression stages the reported cat-and-chicks arrangement without merging. The overflow layout stages a unicorn/dog/cat pile with animals above the rim. The overlap regression stages a six-tier pile with small animals compressed underneath; sliding-regression reconstructs the cat/chick/hamster arrangement from the user's recording. Use `--showcase` with capture modes when no capture path is supplied to disable persistence. A normal launch starts with an empty cup.
 
 Additional visual QA modes: `--capture-mode=fresh-cup`, `--capture-mode=shop`, `--capture-mode=shop-limit`, and `--capture-mode=ten-animals`. These should be combined with `--showcase` or a capture output so previews never touch player records.
+
+v2.9 adds `--capture-mode=loading`, `--capture-mode=top-three`, and `--capture-mode=top-three-empty`, paired with `--capture=/absolute/path.png`. Normal startup now routes through `scenes/loading.tscn`; `scenes/main.tscn` remains the gameplay scene.
 
 Desktop output is a universal Apple Silicon / Intel build. Mobile touch handling is implemented, but iOS/Android device builds and store packaging have not been verified. The Mac app is locally ad-hoc signed, not Apple-notarized.

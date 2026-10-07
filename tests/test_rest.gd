@@ -28,7 +28,8 @@ func run() -> void:
 		elif scenario == "corner":
 			seeds = [[0, 158, 615], [1, 164, 704], [4, 275, 669], [1, 387, 712]]
 		for seed in seeds:
-			world.add_animal(seed[0], Vector2(seed[1], seed[2]))
+			# Preserve the v2.8 fixture's release heights relative to the cup.
+			world.add_animal(seed[0], Vector2(seed[1], seed[2] + World.Layout.SHIFT_Y - 43.0))
 		var previous: Array[PackedVector2Array] = []
 		var reference: Array[PackedVector2Array] = []
 		var largest_step := 0.0

@@ -12,12 +12,12 @@ const HAMMER_RECT := Rect2(5, 149, 60, 56)
 const BOMB_RECT := Rect2(5, 217, 60, 56)
 # Keep NEXT's top/right anchors and height, matching the new capsule's aspect.
 const NEXT_RECT := Rect2(528.0 - 106.0 * 836.0 / 1470.0, 80, 106.0 * 836.0 / 1470.0, 106)
-const CHAIN_RECT := Rect2(12, 874, 516, 516.0 * 238.0 / 2156.0)
+const CHAIN_RECT := Rect2(12, 894, 516, 516.0 * 238.0 / 2156.0)
 const COIN_RECT := Rect2(14, 10, 162, 49)
 const SCORE_RECT := Rect2(188, 10, 162, 53)
 const BEST_RECT := Rect2(363, 10, 162, 44)
 const DROP_TOP := 72.0
-const PLAY_RECT := Rect2(5, 65, 475, 768)
+const PLAY_RECT := Rect2(5, 65, 475, 792)
 const PAUSE_RECT := Rect2(483, 207, 45, 46)
 const STATS_RECT := Rect2(483, 258, 45, 46)
 const SOUND_RECT := Rect2(483, 309, 45, 46)
@@ -37,6 +37,8 @@ var rng := RandomNumberGenerator.new()
 var font := SystemFont.new()
 var score := 0
 var best := 0
+var top_scores: Array[int] = []
+var round_recorded := false
 var coins := 0
 var lifetime_merges := 0
 var highest_level := 0
@@ -69,7 +71,7 @@ var previous_overlay := ""
 var capture_mode := ""
 
 func _ready() -> void:
-	get_window().title = "Mochi Animals — v2.8.1"
+	get_window().title = "Mochi Animals — v2.9"
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	font.font_names = PackedStringArray(["Arial Rounded MT Bold", "Arial Rounded MT", "Arial"])
 	font.font_weight = 700
@@ -106,6 +108,12 @@ func _ready() -> void:
 		seed_ten_animals()
 	if capture_mode == "fresh-cup":
 		reset_game()
+	if capture_mode == "top-three":
+		top_scores.assign([4380, 2260, 1480])
+		overlay = "stats"
+	if capture_mode == "top-three-empty":
+		top_scores.clear()
+		overlay = "stats"
 	if capture_mode == "shop":
 		reset_game()
 		overlay = "shop"
@@ -121,6 +129,7 @@ func _ready() -> void:
 
 func reset_game() -> void:
 	world.clear()
+	round_recorded = false
 	score = 0
 	coins = 0
 	highest_level = 0
@@ -154,6 +163,19 @@ func load_settings() -> void:
 		result = config.load(OS.get_user_data_dir().get_base_dir().path_join("Mochi Animals · 麻薯动物杯/mochi_save.cfg"))
 	if result == OK:
 		best = maxi(0, int(config.get_value("game", "best", 0)))
+		top_scores.clear()
+		if config.has_section_key("game", "top_scores"):
+			var stored: Variant = config.get_value("game", "top_scores", [])
+			if stored is Array:
+				for entry in stored:
+					if entry is int and entry >= 0:
+						top_scores.append(entry)
+		elif best > 0:
+			# Older versions saved only BEST, not a complete round history.
+			top_scores.append(best)
+		normalize_top_scores()
+		if not top_scores.is_empty():
+			best = maxi(best, top_scores[0])
 		# Coins and tools now belong to a single cup. Ignore legacy balances.
 		lifetime_merges = maxi(0, int(config.get_value("game", "merges", 0)))
 		sound.enabled = bool(config.get_value("game", "sound", true))
@@ -164,10 +186,27 @@ func save_settings() -> void:
 		return
 	var config := ConfigFile.new()
 	config.set_value("game", "best", best)
+	config.set_value("game", "top_scores", top_scores)
 	config.set_value("game", "merges", lifetime_merges)
 	config.set_value("game", "sound", sound.enabled)
 	sound.store_music(config)
 	config.save(save_path)
+
+func normalize_top_scores() -> void:
+	top_scores.sort()
+	top_scores.reverse()
+	if top_scores.size() > 3:
+		top_scores.resize(3)
+
+func finish_round() -> void:
+	# Exactly one entry per completed cup, even if the result UI is revisited.
+	if round_recorded:
+		return
+	round_recorded = true
+	top_scores.append(maxi(0, score))
+	normalize_top_scores()
+	best = maxi(best, score)
+	save_settings()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
@@ -193,8 +232,7 @@ func _physics_process(delta: float) -> void:
 	if world.has_grounded_spill():
 		overlay = "gameover"
 		selected_tool = ""
-		best = maxi(best, score)
-		save_settings()
+		finish_round()
 		sound.play_tone(196.0, 0.35)
 
 func _process(delta: float) -> void:
@@ -467,7 +505,6 @@ func _draw() -> void:
 		label(p.text, p.position, 26, Color("934718"))
 	draw_header()
 	Art.asset(self, "chain", CHAIN_RECT)
-	label("MOVE TO AIM  ·  CLICK OR RELEASE TO DROP", Vector2(270, 950), 11)
 	if total_drops == 0 and overlay.is_empty():
 		label("A little cup of happiness", Vector2(265, 480 + World.Layout.SHIFT_Y), 19, Color("a86c4a"))
 		label("Match two friends. Meet someone new.", Vector2(265, 505 + World.Layout.SHIFT_Y), 12, Color("a86c4a"))
@@ -554,8 +591,8 @@ func draw_overlay() -> void:
 			title = "A FRESH CUP?"
 			subtitle = "Best stays. Coins and tools reset."
 		"stats":
-			title = "YOUR LITTLE RECORDS"
-			subtitle = "Every little merge counts."
+			title = "YOUR TOP 3"
+			subtitle = "Best cups on this device."
 		"shop":
 			title = "A LITTLE HELP"
 			subtitle = "Up to 3 of each tool per cup."
@@ -572,9 +609,11 @@ func draw_overlay() -> void:
 			var remaining := purchases_left(tool)
 			label("%d / 3 left" % remaining if remaining > 0 else "SOLD OUT", Vector2(rect.get_center().x, 561), 13, Color("a47050"))
 	elif overlay == "stats":
-		label("BEST     %d" % best, Vector2(270, 433), 26)
-		label("%d merges   ·   %d coins" % [lifetime_merges, coins], Vector2(270, 478), 18)
-		label("BIGGEST FRIEND: " + Data.NAMES[highest_level].to_upper(), Vector2(270, 512), 13)
+		for rank in 3:
+			var y := 425.0 + rank * 43.0
+			panel(Rect2(118, y - 26, 304, 37), Color("fff7e8"))
+			label("#%d" % (rank + 1), Vector2(151, y), 19, Color("bb8049"))
+			label(str(top_scores[rank]) if rank < top_scores.size() else "--", Vector2(295, y), 23)
 	else:
 		label("SCORE", Vector2(181, 429), 15)
 		label("BEST", Vector2(359, 429), 15)
@@ -587,6 +626,9 @@ func draw_overlay() -> void:
 		Art.asset(self, "restart", SECONDARY_RECT)
 	elif overlay in ["gameover", "restart"]:
 		Art.asset(self, "home_long", SECONDARY_RECT)
+	elif overlay == "stats":
+		label("Saved after each completed cup.", Vector2(270, 698), 13, Color("ac7958"), false)
+		label("%d lifetime merges" % lifetime_merges, Vector2(270, 722), 12, Color("ac7958"), false)
 	elif overlay != "shop":
 		label("Soft friends. Big little moments.", Vector2(270, 709), 14, Color("ac7958"), false)
 
