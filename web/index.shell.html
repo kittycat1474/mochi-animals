@@ -9,7 +9,7 @@
 <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#a9d7fb;touch-action:none}body{display:grid;place-items:center}#canvas{display:block;outline:none}#cover{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:#a9d7fb}#cover-frame{position:relative;height:100%;max-height:100vh;aspect-ratio:941/1672;max-width:100vw;overflow:hidden;background:#a9d7fb}#cover-image{display:block;width:100%;height:100%;object-fit:cover}.real-progress{position:absolute;left:17.2%;top:76.1%;width:61.8%;height:1.55%;overflow:hidden;border-radius:999px;background:#ffe8df;box-shadow:0 0 0 2px rgba(142,65,41,.14)}#progress{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#ff8fa3,#ffb0bb);transition:width .12s linear}#notice{position:absolute;left:9%;right:9%;top:85%;padding:12px;border-radius:16px;background:#fff8efee;color:#713b27;text-align:center;font:600 14px/1.4 system-ui,sans-serif;white-space:pre-wrap}button{border:0;border-radius:20px;padding:10px 20px;margin-top:10px;background:#ef8c82;color:#fff;font-weight:700}@media (min-aspect-ratio:941/1672){#cover{background:#a9d7fb}}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#a9d7fb;touch-action:none}body{display:grid;place-items:center}#canvas{display:block;outline:none}#cover{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:#a9d7fb}#cover-frame{position:relative;height:100%;max-height:100vh;aspect-ratio:941/1672;max-width:100vw;overflow:hidden;background:#a9d7fb}#cover-image{display:block;width:100%;height:100%;object-fit:cover}#notice{position:absolute;left:9%;right:9%;top:85%;padding:12px;border-radius:16px;background:#fff8efee;color:#713b27;text-align:center;font:600 14px/1.4 system-ui,sans-serif;white-space:pre-wrap}button{border:0;border-radius:20px;padding:10px 20px;margin-top:10px;background:#ef8c82;color:#fff;font-weight:700}@media (min-aspect-ratio:941/1672){#cover{background:#a9d7fb}}
 </style>
 $GODOT_HEAD_INCLUDE
 </head>
@@ -17,7 +17,6 @@ $GODOT_HEAD_INCLUDE
 <canvas id="canvas" aria-label="Mochi Animals game"></canvas>
 <section id="cover" aria-label="Mochi Animals loading screen"><div id="cover-frame">
 <img id="cover-image" src="loading-cover.png" alt="Mochi Animals loading illustration">
-<div class="real-progress" aria-label="Game loading progress"><span id="progress"></span></div>
 <div id="notice" role="alert" hidden></div>
 </div></section>
 <noscript>Please enable JavaScript to play Mochi Animals.</noscript>
@@ -25,12 +24,11 @@ $GODOT_HEAD_INCLUDE
 <script>
 const config=$GODOT_CONFIG;
 const engine=new Engine(config);
-const fill=document.getElementById('progress');
 const notice=document.getElementById('notice');
 function fail(error){notice.hidden=false;notice.textContent=error.message||String(error);const retry=document.createElement('button');retry.textContent='Try again';retry.onclick=()=>location.reload();notice.appendChild(document.createElement('br'));notice.appendChild(retry)}
 const missing=Engine.getMissingFeatures({threads:false});
 if(missing.length){fail(new Error('This browser is missing: '+missing.join(', ')))}
-else{engine.startGame({onProgress:(current,total)=>{if(total>0)fill.style.width=Math.round(current/total*100)+'%'}}).then(()=>document.getElementById('cover').remove()).catch(fail)}
+else{engine.startGame().then(()=>document.getElementById('cover').remove()).catch(fail)}
 </script>
 </body>
 </html>
