@@ -247,13 +247,38 @@ func update_spill_state(body: Body) -> void:
 	body.spilled = body.cup_side != 0
 
 func has_grounded_spill() -> bool:
+	return grounded_spill_id() != -1
+
+func grounded_spill_id() -> int:
 	for body in bodies:
 		if not body.spilled:
 			continue
 		for p in body.points:
 			if p.y >= GROUND_Y and (p.x < left_at(FLOOR_Y) or p.x > right_at(FLOOR_Y)):
-				return true
-	return false
+				return body.id
+	return -1
+
+func clear_for_revive(failed_id: int) -> Array[int]:
+	var removed: Array[int] = []
+	for body in bodies:
+		# Screen Y grows downward. Preserve touching/partly submerged bodies;
+		# require a 3px gap above the rim before removing the whole soft shape.
+		if body.id == failed_id or body.bounds().end.y < CUP_TOP - 3.0:
+			removed.append(body.id)
+	bodies = bodies.filter(func(body: Body): return body.id not in removed)
+	contacts.clear()
+	validated_contacts.clear()
+	contact_normals.clear()
+	candidate_members.clear()
+	candidate_pairs.clear()
+	candidate_envelopes.clear()
+	for body in bodies:
+		# Keep downward settling but remove upward/lateral launch energy.
+		for i in Body.COUNT:
+			var motion := body.points[i] - body.previous[i]
+			body.previous[i] = body.points[i] - Vector2(motion.x * 0.25, maxf(0.0, motion.y) * 0.5)
+	wake_all()
+	return removed
 
 func collide(a: Body, b: Body) -> bool:
 	if a.sleeping and b.sleeping:

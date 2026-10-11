@@ -1,4 +1,35 @@
-# v2.9 verification — loading, layout and local Top 3
+# v3.0 verification — gifts, revive and input (2026-10-11)
+
+Godot 4.7.1 on Apple Silicon. Desktop source and Web export updated; no GitHub operations or replacement of historical native app builds.
+
+**292 / 292 native automated checks passed:** gameplay/audio/hard cup 86, round economy 60, NEXT 9, loading/Top 3 19, ten-animal merges 24, native touch/audio/tools 51, new rewards/revive/router 43.
+
+- Gifts: 10,000 seeded requests produced 6,019 hammers / 3,981 bombs, one tool per request. No coin/point changes or purchase-price increase. Duplicate, cancelled, and previous-round callback tests pass.
+- Prices: independent 200/300/400/500 and 350/500/750/900 ladders; six purchases of each type work, with 500/900 caps. Insufficient funds cannot advance a stage. Reset restores original stages and zero coins/tools.
+- Revive: remove exact failed ID and actual soft contours completely above the rim, with 3px safety tolerance. Partially-in-cup large dog, exactly touching rim and ordinary in-cup balls survive. Deformed shapes are tested independently of nominal radii. All collision caches invalidated safely. Score/coins/inventory/purchase stages/current/NEXT preserved. Physics runs during one-second input/game-over immunity. Three-use limit, fourth refusal, reset, and one Top 3 entry per cup tested.
+- Input router: Pointer, Touch, Mouse and emulated Mouse all work alone; rapid genuine taps work; parallel streams and extra fingers cannot duplicate actions. Focus loss/cancel clears active gesture. A native release during revive settling does not leave a stuck pointer.
+
+`tests/browser_v3.cjs` runs the real exported engine in Chromium, using isolated storage: 390×844/DPR3 touch, 768×1024/DPR2 touch, and 1440×810 desktop mouse. Checks include actual bridge coordinates, sound/music toggles, rapid gifts, dropping, tool selection and consumption, independent Touch/Mouse DOM fallback streams, compatibility-event deduplication, cancelled gestures, portrait-to-landscape resize, real revive cleanup/retained economy/one-second settling, and fifth shop purchases at capped prices. Screenshots of gift button, result panel, revive and shop were visually inspected. No runtime/console errors occurred in these runs.
+
+Known limitations: no affected physical iPhone available, so the earlier complete-touch-failure cause is not established or declared conclusively fixed for all devices. `?input_debug=1` enables read-only local page/canvas/native/accepted-event counters and current state; no telemetry. Historical ObjectDB warnings appear at shutdown in some native test runners; the new reward/revive suite exits cleanly. No ad SDK is connected; gifts and revives intentionally grant immediately for testing.
+
+Final browser rerun also forced Chromium's user-gesture-required autoplay policy and observed a running engine AudioContext after real mouse/touch gestures. Pointer handling preserves compatibility mousedown for Godot audio unlock while deduplicating its gameplay action. This checks activation and state, not subjective speaker output on physical iPhones.
+
+The new 160×160 gift PNG adds roughly 40 KB to the PCK (about 14.7 MB total); engine WASM remains about 39.5 MB. Loading optimization and actual-progress pink bar are retained, not replaced with simulated progress. Versioned release files are `builds/Web-v3/mochi-v30.*`.
+
+Production published successfully to `https://mochianimals.netlify.app/` on 2026-10-11, deploy `6acb71c2dd77be247afc60eb`. Live package returned HTTP 200 with the expected 14,713,236 bytes. Live input-adapter SHA-256 matches local source (`d56dde74b907855b57105e729dc9f834796bb4f14a4245d5fa8c265f4b7105fe`). A fresh-storage Chrome 390×844/DPR3 touch smoke test against production passed audio unlock/toggles, rapid gifts, dropping, tool use, rotation and no console/runtime errors. These are browser-emulation checks, not physical iPhone verification. QA screenshots are in `builds/QA-v3/` (not published). No GitHub changes were made.
+
+# Historical v2.9 verification — loading, layout and local Top 3
+
+## Latest: static loading cover (2026-10-07)
+
+Supplied 1672×941 image copied unchanged (SHA-256 `78fda2877fb66df882f604e23560069778f8a6c726397f30f9cca2a5b1897edf`). Both browser and Godot loading presentations use one static image, with aspect-preserving cover/center cropping. No progress bars, animation frames or minimum display timer remain. The HTML cover is removed only after the first gameplay frame signals readiness. Gameplay parameters and artwork are unchanged. Source changes were not pushed to GitHub.
+
+Loading/record checks: 19/19 passed. Chrome at 390×844 and 1440×810 verified exact viewport coverage, identical screenshots across loading frames, automatic entry to gameplay and no browser errors. These are desktop browser tests, not physical iPhone tests. Earlier WebGL2 reports on the user's device are not diagnosed or claimed fixed by this presentation change.
+
+Netlify production deploy `6ac657ba79b50d76db2ee9d6` reports ready/published with no error. The `mochi-v29-static` export basename avoids reusing the previous immutable PCK from browser caches. Published directory: `builds/Web-static`. Prior source files are backed up in `builds/backups/before-static-loading.zip`.
+
+The following describes the earlier animated v2.9 release.
 
 Godot 4.7.1 on macOS / Apple M2. Desktop-only update; no GitHub or Netlify changes.
 

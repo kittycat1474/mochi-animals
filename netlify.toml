@@ -1,5 +1,5 @@
 [build]
-  publish = "builds/Web"
+  publish = "builds/Web-v3"
 
 [[headers]]
   for = "/*"

@@ -21,7 +21,7 @@ func run() -> void:
 	check(Art.NEXT_CAPSULE.get_size() == Vector2(977, 1610), "approved NEXT capsule texture is loaded")
 	check(absf(Main.NEXT_RECT.size.aspect() - Art.NEXT_REGION.size.aspect()) < 0.00001, "capsule is uniformly scaled without distortion")
 	check(Main.NEXT_RECT.end.x == 528 and Main.NEXT_RECT.position.y == 80 and Main.NEXT_RECT.size.y == 106, "NEXT retains the previous top/right anchors and height")
-	check(Main.NEXT_RECT.size.x < 61 and Main.NEXT_RECT.end.y < Main.PAUSE_RECT.position.y, "narrow capsule and hit area stay above the unchanged settings button")
+	check(Main.NEXT_RECT.size.x < 61 and Main.NEXT_RECT.end.y < Main.GIFT_RECT.position.y, "narrow capsule and hit area stay above the gift button")
 	var img := Art.NEXT_CAPSULE.get_image()
 	if img.is_compressed():
 		img.decompress()
@@ -49,7 +49,7 @@ func run() -> void:
 	game.handle_release(Main.NEXT_RECT.get_center())
 	check(game.total_drops == 0, "capsule remains display-only")
 	game.reset_game()
-	check(game.current_level == 1 and game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.purchases_left("hammer") == 3 and Main.TOOL_PRICES == {"hammer": 100, "bomb": 180}, "opening animal and all round-economy settings are unchanged")
+	check(game.current_level == 1 and game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.tool_price("hammer") == 200 and game.tool_price("bomb") == 350, "opening animal and zero-balance economy start correctly")
 	game.free()
 	await process_frame
 	print("NEXT CAPSULE: %d/%d passed" % [checks - failures, checks])

@@ -15,7 +15,7 @@ run/main_scene="res://scenes/loading.tscn"
 boot_splash/show_image=false
 boot_splash/bg_color=Color(0.63, 0.83, 0.98, 1)
 config/features=PackedStringArray("4.7", "GL Compatibility")
-config/icon="res://assets/icon.svg"
+config/icon="res://assets/app-icon-512.png"
 
 [display]
 
@@ -25,6 +25,11 @@ window/size/window_width_override=486
 window/size/window_height_override=864
 window/stretch/mode="canvas_items"
 window/handheld/orientation=1
+
+[input_devices]
+
+pointing/emulate_mouse_from_touch=true
+pointing/emulate_touch_from_mouse=false
 
 [rendering]
 

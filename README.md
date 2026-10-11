@@ -1,10 +1,14 @@
-# Mochi Animals — Asset Edition (v2.9)
+# Mochi Animals — Asset Edition (v3.0 test rewards)
 
 A complete, local Godot 4.7 portrait merging game, with English UI and the supplied animal, button, and cup artwork. Tested with Godot 4.7.1 on Apple Silicon.
 
 ## Play
 
-Import `project.godot` in Godot 4.7 and press **F5**, or open the Mac app in `builds/Mac-v2.9/Mochi Animals v2.9.app`. Quit a previously running version before opening the updated app. The window title explicitly says **v2.9**.
+Open `project.godot` with Godot 4.7.1 and press **F5**, or play the Web release at https://mochianimals.netlify.app. This source/Web update does not replace the historical native Mac app exports or update GitHub.
+
+The loading screen keeps the optimized, static village illustration and a single pink bar driven by real download progress. No animated loading scene. The cover is removed after gameplay's first rendered frame.
+
+Web output is `builds/Web-v3/` with the new `mochi-v30` basename to avoid stale immutable engine/package caches. Export using the Web preset, then run Godot headlessly with `--script tests/prepare_web.gd` to prepare the index, browser input adapter and small icons. Publish this directory to the existing Netlify site. Do not reuse versioned WASM/PCK filenames for future production updates.
 
 - Mouse: move to aim; click the play area to drop.
 - Touch: drag and release to drop.
@@ -12,7 +16,18 @@ Import `project.godot` in Godot 4.7 and press **F5**, or open the Mac app in `bu
 - Home keeps the current cup available through PLAY. RESTART starts a new cup after confirmation.
 - Sound and music have separate switches. The supplied MP3 starts automatically, loops, and plays at 30% amplitude. The music button remembers your choice for subsequent launches.
 
-### v2.9 loading page, lower cup and local Top 3
+### v3.0 gifts, unlimited purchases, revive, and input compatibility
+
+- The former settings button is a matching present-box button. During this **test-only economy**, each click grants one Hammer (60%) or Bomb (40%), without ads or coins. Rapid clicks are allowed; duplicate browser events are not extra clicks. Gift rewards do not advance shop prices.
+- Purchases are unlimited per cup. Hammer prices: 200, 300, 400, then 500 for all further purchases. Bomb: 350, 500, 750, then 900. Counters are independent and reset with coins/inventory when starting a new cup. Merge rewards are unchanged.
+- Game-over HOME is replaced by REVIVE, displaying uses left. Three per cup, immediate for testing, never paid with coins. Remove the exact losing animal and soft outlines wholly above the rim (3px safety margin); retain any partially submerged animal. Keep score, coins, tools, price stages and NEXT. Simulate one second of settling while ignoring player actions/new game-over detection. The same cup cannot occupy multiple Top 3 slots by repeatedly reviving.
+- `reward_gateway.gd` is the future ad-completion boundary. There is **no ad SDK, ad display, tracking or monetization in this build**. Replace the explicit `TEST_REWARDS` path before introducing real ads; only an earned-reward callback should call `complete`, never an ad close/failure. Future revive ads can request 1/2/3 completed ads according to `revives_used + 1` before fulfilling one revive.
+- Native and Web input use one gesture router. Web has Pointer, Touch and Mouse listeners simultaneously, pointer capture/cancellation, live viewport-coordinate conversion, and no user-agent/model blacklist. Mouse-only and emulated-mouse-only streams remain usable. Raw Godot pointer events are ignored only after the browser bridge is attached, preventing double actions.
+- Append `?input_debug=1` to the Web URL for an on-device event counter and state panel. It is off by default, does not intercept touch, and sends no telemetry. If an affected phone still fails, capture this panel after tapping sound, gift and the play area. Real affected iPhones were not available for verification.
+
+See `VERIFICATION.md` for current tests. Sections below describe historical releases, not current prices or loading behavior.
+
+### v2.9 loading page, lower cup and local Top 3 (history)
 
 Startup now uses the supplied village/logo/bridge/loading-bar/unicorn sheet. The bar reads Godot's threaded resource-loading progress, with a short presentation hold (minimum 1.2 seconds, at least 0.25 seconds at completion), then opens the game automatically. The four supplied unicorn frames animate above the bar. New artwork is exclusive to startup: gameplay animals, room, NEXT, cup and buttons keep their existing assets.
 

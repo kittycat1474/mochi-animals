@@ -37,7 +37,7 @@ func run() -> void:
 	quit(1 if failures else 0)
 
 func test_layout_and_spawning() -> void:
-	check(Main.NEXT_RECT.end.y < Main.PAUSE_RECT.position.y and Main.NEXT_RECT.end.x == Main.PAUSE_RECT.end.x, "NEXT is directly above the right-hand settings column")
+	check(Main.NEXT_RECT.end.y < Main.GIFT_RECT.position.y and Main.NEXT_RECT.end.x == Main.GIFT_RECT.end.x, "NEXT is directly above the right-hand gift column")
 	check(Main.CHAIN_RECT.position.x == 12 and Main.CHAIN_RECT.end.x == 528 and Main.CHAIN_RECT.end.y < 952, "evolution strip spans the bottom width with a safe screen margin")
 	check(Art.CHAIN.get_size() == Vector2(2172, 724) and absf(Main.CHAIN_RECT.size.aspect() - Art.CHAIN_REGION.size.aspect()) < 0.001, "latest attachment is sampled without stretching the animals")
 	var game = new_game()
@@ -79,28 +79,28 @@ func test_layout_and_spawning() -> void:
 		game.handle_press(rect.get_center())
 		game.handle_release(rect.get_center())
 	check(game.total_drops == 0, "NEXT and bottom strip never accidentally release an animal")
-	game.handle_press(Main.PAUSE_RECT.get_center())
-	check(game.overlay == "pause", "settings below NEXT still opens the pause panel")
+	game.handle_press(Main.GIFT_RECT.get_center())
+	check(game.overlay.is_empty() and game.hammers + game.bombs == 1, "gift below NEXT awards exactly one tool without pausing")
 	game.free()
 
 func test_economy() -> void:
 	var game = new_game()
-	check(game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.purchases_left("hammer") == 3 and game.purchases_left("bomb") == 3, "fresh round has no coins or tools and three exchanges of each type")
+	check(game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.tool_purchases == {"hammer": 0, "bomb": 0}, "fresh round has no coins or tools and fresh price stages")
 	game.handle_press(Main.HAMMER_RECT.get_center())
 	check(game.overlay == "shop" and game.selected_tool.is_empty(), "empty hammer button opens the exchange shop")
 	game.coins = 99
 	game.modal_press(Main.SHOP_HAMMER_RECT.get_center())
-	check(game.coins == 99 and game.hammers == 0 and game.purchases_left("hammer") == 3, "failed hammer purchase changes neither coins nor exchange quota")
+	check(game.coins == 99 and game.hammers == 0 and game.tool_price("hammer") == 200, "failed hammer purchase changes neither coins nor price stage")
 	game.coins = 179
 	game.modal_press(Main.SHOP_BOMB_RECT.get_center())
-	check(game.coins == 179 and game.bombs == 0 and game.purchases_left("bomb") == 3, "failed bomb purchase changes neither coins nor exchange quota")
+	check(game.coins == 179 and game.bombs == 0 and game.tool_price("bomb") == 350, "failed bomb purchase changes neither coins nor price stage")
 	check(not game.buy_tool("unknown") and game.coins == 179, "invalid tool cannot deduct coins")
-	game.coins = 100
+	game.coins = 200
 	game.modal_press(Main.SHOP_HAMMER_RECT.get_center())
-	check(game.coins == 0 and game.hammers == 1 and game.purchases_left("hammer") == 2, "shop hammer costs exactly 100 and consumes one exchange")
-	game.coins = 180
+	check(game.coins == 0 and game.hammers == 1 and game.tool_price("hammer") == 300, "shop hammer costs exactly 200 and advances its price")
+	game.coins = 350
 	game.modal_press(Main.SHOP_BOMB_RECT.get_center())
-	check(game.coins == 0 and game.bombs == 1 and game.purchases_left("bomb") == 2, "shop bomb costs exactly 180 and consumes one exchange")
+	check(game.coins == 0 and game.bombs == 1 and game.tool_price("bomb") == 500, "shop bomb costs exactly 350 and advances its price")
 	game.modal_press(Main.SHOP_PRIMARY_RECT.get_center())
 	check(game.overlay.is_empty(), "shop PLAY resumes the same cup without resetting inventory")
 	for tool in ["hammer", "bomb"]:
@@ -108,7 +108,7 @@ func test_economy() -> void:
 		game.world.add_animal(0, Vector2(270, 600))
 		game.select_tool(tool)
 		game.use_tool(Vector2(270, 600))
-		check(game.world.bodies.is_empty() and game.purchases_left(tool) == 2, "using the purchased %s does not restore an exchange" % tool)
+		check(game.world.bodies.is_empty() and game.tool_purchases[tool] == 1, "using the purchased %s does not reset its price" % tool)
 	game.reset_game()
 	var total_reward := 0
 	for level in range(1, Data.NAMES.size()):
@@ -119,20 +119,21 @@ func test_economy() -> void:
 		check(game.coins - before == reward, "merging %s keeps its %d-coin reward" % [Data.NAMES[level], reward])
 	check(game.coins == total_reward and game.best == game.score, "merge rewards accumulate during the cup and BEST still updates")
 	game.reset_game()
-	game.coins = 2000
+	game.coins = 10000
 	for tool in ["hammer", "bomb"]:
 		var all_bought := true
-		for i in 3:
+		for i in 6:
+			check(game.tool_price(tool) == Main.TOOL_PRICES[tool][mini(i, 3)], "%s purchase %d has the correct capped price" % [tool, i + 1])
 			all_bought = game.buy_tool(tool) and all_bought
 		var balance: int = game.coins
-		check(all_bought and not game.buy_tool(tool) and game.coins == balance and game.purchases_left(tool) == 0, "fourth %s purchase is rejected without charging coins" % tool)
-		for i in 3:
+		check(all_bought and game.tool_purchases[tool] == 6, "six %s purchases succeed, no per-round quota" % tool)
+		for i in 6:
 			game.world.clear()
 			game.world.add_animal(0, Vector2(270, 600))
 			game.select_tool(tool)
 			game.use_tool(Vector2(270, 600))
-		check(not game.buy_tool(tool) and game.coins == balance and (game.hammers if tool == "hammer" else game.bombs) == 0, "%s remains sold out after all three items are used" % tool)
-	check(game.coins == 1160, "independent 3+3 limits charge exactly 840 coins per cup")
+		check(game.coins == balance and (game.hammers if tool == "hammer" else game.bombs) == 0, "all six %s items can be used without changing coins" % tool)
+	check(game.coins == 3300, "six of each tool charge exactly 6700 coins")
 	game.free()
 
 func test_reset_paths() -> void:
@@ -152,7 +153,7 @@ func test_reset_paths() -> void:
 				game._input(event)
 			else:
 				game.modal_press(Main.PRIMARY_RECT.get_center())
-			check(game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.purchases_left("hammer") == 3 and game.purchases_left("bomb") == 3 and game.current_level == 1 and game.best == 5000, "%s via %s starts a zero-balance chick round and keeps BEST" % [mode, "keyboard" if keyboard else "button"])
+			check(game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.tool_price("hammer") == 200 and game.tool_price("bomb") == 350 and game.current_level == 1 and game.best == 5000, "%s via %s starts a zero-balance chick round and keeps BEST" % [mode, "keyboard" if keyboard else "button"])
 	game.coins = 80
 	game.overlay = "home"
 	game.modal_press(Main.PRIMARY_RECT.get_center())
@@ -190,6 +191,6 @@ func test_persistence() -> void:
 	game.set_physics_process(false)
 	game.set_process(false)
 	game.sound.set_music(false)
-	check(game.best == 6789 and game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.purchases_left("hammer") == 3, "relaunch keeps the latest BEST but resets all round economy")
+	check(game.best == 6789 and game.coins == 0 and game.hammers == 0 and game.bombs == 0 and game.tool_price("hammer") == 200, "relaunch keeps the latest BEST but resets all round economy")
 	game.free()
 	DirAccess.remove_absolute(path)

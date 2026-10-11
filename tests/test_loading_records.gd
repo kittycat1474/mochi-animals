@@ -81,9 +81,7 @@ func run() -> void:
 	DirAccess.remove_absolute(path)
 
 	check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/loading.tscn", "normal startup opens the loading scene")
-	check(Loading.SHEET.get_size() == Vector2(1206, 1305), "original supplied loading sheet is used")
-	for rect in [Loading.BACKGROUND, Loading.LOGO, Loading.BRIDGE, Loading.BAR_EMPTY, Loading.BAR_FILL]:
-		check(Rect2(Vector2.ZERO, Loading.SHEET.get_size()).encloses(rect), "loading atlas region fits inside original sheet")
+	check(Loading.COVER.get_size() == Vector2(1672, 941), "new static landscape illustration is used")
 	var loader := Loading.new()
 	root.add_child(loader)
 	loader.set_process(false)

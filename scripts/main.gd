@@ -5,6 +5,8 @@ const World = preload("res://scripts/soft_world.gd")
 const Painter = preload("res://scripts/sprite_painter.gd")
 const Art = preload("res://scripts/asset_art.gd")
 const Sound = preload("res://scripts/sound.gd")
+const PointerRouter = preload("res://scripts/pointer_router.gd")
+const RewardGateway = preload("res://scripts/reward_gateway.gd")
 const INK := Color("703719")
 const CREAM := Color("fff0d9")
 const HOME_RECT := Rect2(10, 80, 50, 50)
@@ -18,7 +20,7 @@ const SCORE_RECT := Rect2(188, 10, 162, 53)
 const BEST_RECT := Rect2(363, 10, 162, 44)
 const DROP_TOP := 72.0
 const PLAY_RECT := Rect2(5, 65, 475, 792)
-const PAUSE_RECT := Rect2(483, 207, 45, 46)
+const GIFT_RECT := Rect2(483, 207, 45, 46)
 const STATS_RECT := Rect2(483, 258, 45, 46)
 const SOUND_RECT := Rect2(483, 309, 45, 46)
 const MUSIC_RECT := Rect2(483, 360, 45, 46)
@@ -27,8 +29,9 @@ const SECONDARY_RECT := Rect2(145, 670, 250, 76)
 const SHOP_HAMMER_RECT := Rect2(145, 423, 105, 97)
 const SHOP_BOMB_RECT := Rect2(289, 423, 105, 97)
 const SHOP_PRIMARY_RECT := Rect2(119, 580, 302, 109)
-const TOOL_PRICES := {"hammer": 100, "bomb": 180}
-const TOOL_PURCHASE_LIMIT := 3
+const TOOL_PRICES := {"hammer": [200, 300, 400, 500], "bomb": [350, 500, 750, 900]}
+const REVIVE_LIMIT := 3
+const SETTLE_SECONDS := 1.0
 const SAVE_PATH := "user://mochi_save.cfg"
 
 var world := World.new()
@@ -56,7 +59,20 @@ var combo := 0
 var combo_timer := 0.0
 var total_drops := 0
 var pointer_down := false
-var touch_id := -1
+var input_router := PointerRouter.new()
+var rewards := RewardGateway.new()
+var reward_rng := RandomNumberGenerator.new()
+var revives_used := 0
+var gifts_claimed := 0
+var settle_time := 0.0
+var failed_body_id := -1
+var scores_before_loss: Array[int] = []
+var web_input: JavaScriptObject
+var web_input_callback: JavaScriptObject
+var web_bridge_active := false
+var web_debug := false
+var web_debug_timer := 0.0
+var input_counts := {"native_touch": 0, "native_mouse": 0, "bridge": 0, "accepted_down": 0}
 var pointer := Vector2(265, 500)
 var show_capture := false
 var capture_path := ""
@@ -71,13 +87,15 @@ var previous_overlay := ""
 var capture_mode := ""
 
 func _ready() -> void:
-	get_window().title = "Mochi Animals — v2.9"
+	get_window().title = "Mochi Animals — v3.0"
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	font.font_names = PackedStringArray(["Arial Rounded MT Bold", "Arial Rounded MT", "Arial"])
 	font.font_weight = 700
 	sound = Sound.new()
 	add_child(sound)
 	rng.randomize()
+	reward_rng.randomize()
+	rewards.completed.connect(on_reward_completed)
 	# Parse developer options before touching a save. Previews never change records.
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--showcase":
@@ -86,7 +104,7 @@ func _ready() -> void:
 			capture_path = arg.trim_prefix("--capture=")
 		if arg.begins_with("--capture-mode="):
 			capture_mode = arg.trim_prefix("--capture-mode=")
-	if show_capture or not capture_path.is_empty():
+	if show_capture or not capture_path.is_empty() or not capture_mode.is_empty():
 		persistence_enabled = false
 	load_settings()
 	reset_game()
@@ -119,17 +137,32 @@ func _ready() -> void:
 		overlay = "shop"
 	if capture_mode == "shop-limit":
 		reset_game()
-		coins = 1200
-		for i in TOOL_PURCHASE_LIMIT:
+		coins = 9000
+		for i in 4:
 			buy_tool("hammer")
 			buy_tool("bomb")
 		overlay = "shop"
 		toast_time = 0.0
+	if capture_mode == "revive":
+		seed_revive_preview()
 	get_window().focus_exited.connect(on_focus_lost)
+	if OS.has_feature("web"):
+		setup_web_input()
+		announce_web_ready.call_deferred()
+
+func announce_web_ready() -> void:
+	await RenderingServer.frame_post_draw
+	JavaScriptBridge.eval("window.dispatchEvent(new Event('mochi-ready'))")
 
 func reset_game() -> void:
 	world.clear()
 	round_recorded = false
+	revives_used = 0
+	gifts_claimed = 0
+	settle_time = 0.0
+	failed_body_id = -1
+	scores_before_loss.clear()
+	rewards.cancel()
 	score = 0
 	coins = 0
 	highest_level = 0
@@ -145,7 +178,6 @@ func reset_game() -> void:
 	toast = ""
 	toast_time = 0.0
 	pointer_down = false
-	touch_id = -1
 	hammers = 0
 	bombs = 0
 	tool_purchases = {"hammer": 0, "bomb": 0}
@@ -213,27 +245,76 @@ func _notification(what: int) -> void:
 		on_focus_lost()
 
 func on_focus_lost() -> void:
+	input_router.cancel()
+	pointer_down = false
 	if overlay.is_empty() and total_drops > 0 and not show_capture and capture_path.is_empty():
 		overlay = "pause"
-		pointer_down = false
 
 func _physics_process(delta: float) -> void:
 	if not overlay.is_empty():
 		return
+	var settling := settle_time > 0.0
+	settle_time = maxf(0.0, settle_time - delta)
 	cooldown = maxf(0.0, cooldown - delta)
 	combo_timer = maxf(0.0, combo_timer - delta)
 	if combo_timer <= 0.0:
 		combo = 0
 	var axis := float(Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_A))
-	set_aim(aim_x + axis * 310.0 * delta)
+	if not settling:
+		set_aim(aim_x + axis * 310.0 * delta)
 	for event in world.step(delta):
 		on_merge(event)
 	# No countdown at the rim. Only an escaped animal touching ground ends play.
-	if world.has_grounded_spill():
-		overlay = "gameover"
-		selected_tool = ""
-		finish_round()
-		sound.play_tone(196.0, 0.35)
+	if not settling:
+		var spill_id := world.grounded_spill_id()
+		if spill_id != -1:
+			enter_game_over(spill_id)
+
+func enter_game_over(spill_id: int) -> void:
+	if overlay == "gameover":
+		return
+	failed_body_id = spill_id
+	overlay = "gameover"
+	selected_tool = ""
+	pointer_down = false
+	scores_before_loss = top_scores.duplicate()
+	finish_round()
+	sound.play_tone(196.0, 0.35)
+
+func request_revive() -> void:
+	if overlay == "gameover" and revives_used < REVIVE_LIMIT and failed_body_id != -1:
+		rewards.request("revive")
+
+func on_reward_completed(placement: String, _request_id: int) -> void:
+	if placement == "revive":
+		revive()
+	elif placement == "gift" and overlay.is_empty() and settle_time <= 0.0:
+		var tool := "hammer" if reward_rng.randf() < 0.6 else "bomb"
+		if tool == "hammer":
+			hammers += 1
+		else:
+			bombs += 1
+		gifts_claimed += 1
+		show_toast("A little gift: +1 " + tool.to_upper() + "!")
+		sound.tap()
+
+func revive() -> bool:
+	if overlay != "gameover" or revives_used >= REVIVE_LIMIT or failed_body_id == -1:
+		return false
+	world.clear_for_revive(failed_body_id)
+	revives_used += 1
+	failed_body_id = -1
+	settle_time = SETTLE_SECONDS
+	cooldown = maxf(cooldown, SETTLE_SECONDS)
+	# The same cup may fail several times, but earns only one Top 3 entry.
+	top_scores = scores_before_loss.duplicate()
+	round_recorded = false
+	selected_tool = ""
+	pointer_down = false
+	overlay = ""
+	save_settings()
+	queue_redraw()
+	return true
 
 func _process(delta: float) -> void:
 	elapsed += delta
@@ -249,6 +330,11 @@ func _process(delta: float) -> void:
 			p.position.y -= 28.0 * delta
 		popups = popups.filter(func(p): return p.life > 0.0)
 	queue_redraw()
+	if web_debug:
+		web_debug_timer += delta
+		if web_debug_timer >= 0.15:
+			web_debug_timer = 0.0
+			web_input.report(JSON.stringify(debug_state()))
 	if not capture_path.is_empty():
 		capture_frames += 1
 		if capture_frames == 90:
@@ -273,13 +359,13 @@ func drop_position() -> Vector2:
 func is_play_position(at: Vector2) -> bool:
 	if not PLAY_RECT.has_point(at):
 		return false
-	for rect in [HOME_RECT, HAMMER_RECT, BOMB_RECT, COIN_RECT, SCORE_RECT, BEST_RECT, PAUSE_RECT, STATS_RECT, SOUND_RECT, MUSIC_RECT, NEXT_RECT, CHAIN_RECT]:
+	for rect in [HOME_RECT, HAMMER_RECT, BOMB_RECT, COIN_RECT, SCORE_RECT, BEST_RECT, GIFT_RECT, STATS_RECT, SOUND_RECT, MUSIC_RECT, NEXT_RECT, CHAIN_RECT]:
 		if rect.has_point(at):
 			return false
 	return true
 
 func drop_animal() -> void:
-	if cooldown > 0.0 or not overlay.is_empty() or not selected_tool.is_empty():
+	if cooldown > 0.0 or not overlay.is_empty() or not selected_tool.is_empty() or settle_time > 0.0:
 		return
 	world.add_animal(current_level, drop_position(), Vector2(0.0, 35.0))
 	total_drops += 1
@@ -311,7 +397,15 @@ func show_toast(message: String, seconds := 2.3) -> void:
 	toast_time = seconds
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		input_counts.native_touch += 1
+	elif event is InputEventMouseButton:
+		input_counts.native_mouse += 1
+	if web_bridge_active and (event is InputEventMouse or event is InputEventScreenTouch or event is InputEventScreenDrag):
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if settle_time > 0.0:
+			return
 		match event.physical_keycode:
 			KEY_SPACE, KEY_ENTER:
 				if overlay in ["home", "pause", "stats", "help"]:
@@ -332,27 +426,64 @@ func _input(event: InputEvent) -> void:
 					overlay = "restart"
 			KEY_M:
 				toggle_sound()
-	if event is InputEventMouseMotion and touch_id == -1:
-		pointer = event.position
-		if overlay.is_empty() and is_play_position(event.position):
-			set_aim(event.position.x)
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and touch_id == -1:
-		if event.pressed:
-			handle_press(event.position)
-		else:
-			handle_release(event.position)
-	if event is InputEventScreenTouch:
-		if event.pressed and touch_id == -1:
-			touch_id = event.index
-			handle_press(event.position)
-		elif not event.pressed and event.index == touch_id:
-			handle_release(event.position)
-			touch_id = -1
-	if event is InputEventScreenDrag and event.index == touch_id and overlay.is_empty() and is_play_position(event.position):
-		pointer = event.position
-		set_aim(event.position.x)
+	if event is InputEventMouseMotion:
+		route_pointer("move", event.position, "mouse", 0)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		route_pointer("down" if event.pressed else "up", event.position, "mouse-emulated" if event.device == InputEvent.DEVICE_ID_EMULATION else "mouse", 0)
+	elif event is InputEventScreenTouch:
+		route_pointer("cancel" if event.canceled else ("down" if event.pressed else "up"), event.position, "touch", event.index)
+	elif event is InputEventScreenDrag:
+		route_pointer("move", event.position, "touch", event.index)
+
+func route_pointer(phase: String, at: Vector2, source: String, id: int) -> void:
+	var action: String = input_router.feed(phase, at, source, id)
+	if action == "cancel":
+		pointer_down = false
+		return
+	if settle_time > 0.0:
+		pointer_down = false
+		return
+	match action:
+		"down":
+			input_counts.accepted_down += 1
+			handle_press(at)
+		"up":
+			handle_release(at)
+		"move":
+			pointer = at
+			if overlay.is_empty() and is_play_position(at):
+				set_aim(at.x)
+
+func setup_web_input() -> void:
+	web_input = JavaScriptBridge.get_interface("mochiInput")
+	if web_input != null:
+		web_input_callback = JavaScriptBridge.create_callback(on_web_pointer)
+		web_input.connectGame(web_input_callback)
+		web_bridge_active = true
+		web_debug = bool(web_input.debug)
+
+func on_web_pointer(args: Array) -> void:
+	if args.size() < 5:
+		return
+	input_counts.bridge += 1
+	if str(args[0]) == "blur":
+		on_focus_lost()
+		return
+	# The browser supplies current canvas backing pixels; invert Godot's own
+	# stretch/letterbox transform instead of assuming fixed CSS dimensions.
+	var screen := Vector2(float(args[1]), float(args[2]))
+	var local := (get_viewport().get_screen_transform() * get_global_transform_with_canvas()).affine_inverse() * screen
+	route_pointer(str(args[0]), local, str(args[3]), int(args[4]))
+
+func debug_state() -> Dictionary:
+	var animals: Array = []
+	for body in world.bodies:
+		animals.append({"id": body.id, "x": body.center.x, "y": body.center.y, "bottom": body.bounds().end.y, "spilled": body.spilled})
+	return {"version": "3.0", "inputs": input_counts, "bridge": web_bridge_active, "overlay": overlay, "selected": selected_tool, "coins": coins, "hammers": hammers, "bombs": bombs, "revives": revives_used, "settling": settle_time, "drops": total_drops, "score": score, "music": sound.music_enabled, "sound": sound.enabled, "animals": animals}
 
 func handle_press(position: Vector2) -> void:
+	if settle_time > 0.0:
+		return
 	pointer_down = false
 	pointer = position
 	if not overlay.is_empty():
@@ -360,8 +491,8 @@ func handle_press(position: Vector2) -> void:
 		return
 	if HOME_RECT.has_point(position):
 		overlay = "home"
-	elif PAUSE_RECT.has_point(position):
-		overlay = "pause"
+	elif GIFT_RECT.has_point(position):
+		rewards.request("gift")
 	elif STATS_RECT.has_point(position):
 		overlay = "stats"
 	elif SOUND_RECT.has_point(position):
@@ -380,7 +511,7 @@ func handle_press(position: Vector2) -> void:
 		pointer_down = true
 
 func handle_release(position: Vector2) -> void:
-	if pointer_down and overlay.is_empty() and is_play_position(position):
+	if pointer_down and settle_time <= 0.0 and overlay.is_empty() and is_play_position(position):
 		if selected_tool.is_empty():
 			set_aim(position.x)
 			drop_animal()
@@ -438,19 +569,18 @@ func modal_press(position: Vector2) -> void:
 		elif overlay == "restart":
 			overlay = "pause"
 		elif overlay == "gameover":
-			reset_game()
-			overlay = "home"
+			request_revive()
 
-func purchases_left(tool: String) -> int:
-	return maxi(0, TOOL_PURCHASE_LIMIT - int(tool_purchases.get(tool, TOOL_PURCHASE_LIMIT)))
+func tool_price(tool: String, after_purchase := false) -> int:
+	if not TOOL_PRICES.has(tool):
+		return -1
+	var index := mini(int(tool_purchases.get(tool, 0)) + int(after_purchase), TOOL_PRICES[tool].size() - 1)
+	return TOOL_PRICES[tool][index]
 
 func buy_tool(tool: String) -> bool:
 	if not TOOL_PRICES.has(tool):
 		return false
-	if purchases_left(tool) == 0:
-		show_toast("No more " + tool + " purchases this cup.")
-		return false
-	var price: int = TOOL_PRICES[tool]
+	var price := tool_price(tool)
 	if coins < price:
 		show_toast("Keep merging to earn more coins!")
 		return false
@@ -513,6 +643,9 @@ func _draw() -> void:
 		draw_arc(pointer, 115.0 if selected_tool == "bomb" else 28.0, 0, TAU, 64, Color("ffeab1"), 2.0, true)
 	if not overlay.is_empty():
 		draw_overlay()
+	if settle_time > 0.0:
+		panel(Rect2(115, 240, 310, 44), Color("fff0d9"))
+		label("Getting everyone settled...", Vector2(270, 268), 17)
 	if toast_time > 0.0:
 		var toast_rect := Rect2(90, 715, 360, 32) if overlay == "shop" else Rect2(18, 284, 386, 30)
 		panel(toast_rect, Color("fff0d9"))
@@ -539,7 +672,7 @@ func draw_header() -> void:
 	label(str(best), BEST_RECT.position + BEST_RECT.size * Vector2(0.63, 0.74), 19)
 	Art.asset(self, "next", NEXT_RECT)
 	Painter.paint(self, next_level, Art.next_preview_center(NEXT_RECT), Art.next_preview_radius(NEXT_RECT))
-	Art.asset(self, "gear", PAUSE_RECT)
+	draw_texture_rect(Art.GIFT, GIFT_RECT.grow(2.0), false)
 	Art.asset(self, "stats", STATS_RECT)
 	Art.asset(self, "sound_on" if sound.enabled else "sound_off", SOUND_RECT)
 	Art.asset(self, "music_on" if sound.music_enabled else "music_off", MUSIC_RECT)
@@ -595,7 +728,7 @@ func draw_overlay() -> void:
 			subtitle = "Best cups on this device."
 		"shop":
 			title = "A LITTLE HELP"
-			subtitle = "Up to 3 of each tool per cup."
+			subtitle = "Trade your coins for a little help."
 	Painter.paint(self, 0, Vector2(270, 293), 31, 2 if overlay == "gameover" else 0)
 	label(title, Vector2(270, 353), 23)
 	label(subtitle, Vector2(270, 382), 13, Color("a47050"), false)
@@ -605,9 +738,10 @@ func draw_overlay() -> void:
 			var rect: Rect2 = SHOP_HAMMER_RECT if tool == "hammer" else SHOP_BOMB_RECT
 			Art.asset(self, tool, rect)
 			badge(rect, hammers if tool == "hammer" else bombs)
-			label("%d coins" % TOOL_PRICES[tool], Vector2(rect.get_center().x, 539), 14)
-			var remaining := purchases_left(tool)
-			label("%d / 3 left" % remaining if remaining > 0 else "SOLD OUT", Vector2(rect.get_center().x, 561), 13, Color("a47050"))
+			var price := tool_price(tool)
+			var next_price := tool_price(tool, true)
+			label("%d coins" % price, Vector2(rect.get_center().x, 539), 15)
+			label("Next: %d" % next_price if next_price != price else "Price stays %d" % price, Vector2(rect.get_center().x, 561), 12, Color("a47050"))
 	elif overlay == "stats":
 		for rank in 3:
 			var y := 425.0 + rank * 43.0
@@ -624,7 +758,12 @@ func draw_overlay() -> void:
 	Art.asset(self, "restart" if overlay in ["gameover", "restart"] else "play", SHOP_PRIMARY_RECT if overlay == "shop" else PRIMARY_RECT)
 	if overlay in ["pause", "home"]:
 		Art.asset(self, "restart", SECONDARY_RECT)
-	elif overlay in ["gameover", "restart"]:
+	elif overlay == "gameover":
+		var left := REVIVE_LIMIT - revives_used
+		panel(SECONDARY_RECT, Color("e4c6f4") if left > 0 else Color("dfd7d0"))
+		label("REVIVE" if left > 0 else "NO REVIVES LEFT", SECONDARY_RECT.get_center() + Vector2(0, -2), 25 if left > 0 else 17)
+		label("%d LEFT" % left if left > 0 else "Start a fresh cup", SECONDARY_RECT.get_center() + Vector2(0, 22), 12, Color("895c76"), false)
+	elif overlay == "restart":
 		Art.asset(self, "home_long", SECONDARY_RECT)
 	elif overlay == "stats":
 		label("Saved after each completed cup.", Vector2(270, 698), 13, Color("ac7958"), false)
@@ -655,6 +794,23 @@ func seed_sliding_regression() -> void:
 	current_level = 2
 	next_level = 2
 	aim_x = 200.0
+
+func seed_revive_preview() -> void:
+	# Developer-only fixture; never enabled by a production URL or a saved game.
+	world.clear()
+	world.allow_merges = false
+	for entry in [[5, 280, 415], [1, 200, 330], [3, 200, 730], [2, 340, 720], [0, 505, 850]]:
+		var body := World.Body.new(world.next_id, entry[0], Vector2(entry[1], entry[2]))
+		world.next_id += 1
+		world.bodies.append(body)
+	world.bodies[-1].spilled = true
+	world.bodies[-1].cup_side = 1
+	total_drops = 30
+	score = 1500
+	coins = 150
+	hammers = 2
+	bombs = 1
+	enter_game_over(world.bodies[-1].id)
 
 func seed_ten_animals() -> void:
 	world.clear()

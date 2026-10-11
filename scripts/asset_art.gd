@@ -2,6 +2,7 @@ extends RefCounted
 ## Original raster assets through atlas UVs and native clipping polygons.
 ## Source PNGs remain unmodified. The cup is assembled as back/front layers.
 const UI = preload("res://assets/source/buttons.png")
+const GIFT = preload("res://assets/ui/gift.png")
 const CUP = preload("res://assets/source/cup.png")
 const REFERENCE = preload("res://assets/source/layout-reference.png")
 const ROOM = preload("res://assets/room.png")

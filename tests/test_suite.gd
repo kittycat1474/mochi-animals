@@ -359,14 +359,14 @@ func test_game_flow() -> void:
 	check(game.world.bodies.is_empty() and game.score == 0 and game.overlay.is_empty(), "restart clears the game state")
 	check(game.best == 250, "restart preserves best score")
 	check(game.coins == 0 and game.hammers == 0 and game.bombs == 0, "restart clears coins and tool inventory")
-	game.coins = 280
+	game.coins = 550
 	game.buy_tool("hammer")
 	game.world.add_animal(0, Vector2(270, 600))
 	game.select_tool("hammer")
 	game.use_tool(Vector2(270, 600))
 	check(game.world.bodies.is_empty() and game.hammers == 0, "asset hammer button removes one animal and consumes one charge")
 	game.buy_tool("bomb")
-	check(game.coins == 0 and game.bombs == 1, "100-coin hammer and 180-coin bomb update balance and inventory")
+	check(game.coins == 0 and game.bombs == 1, "200-coin hammer and 350-coin bomb update balance and inventory")
 	game.selected_tool = "bomb"
 	game.world.add_animal(0, Vector2(240, 600))
 	game.world.add_animal(1, Vector2(310, 600))

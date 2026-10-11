@@ -1,5 +1,15 @@
 # Asset provenance
 
+## v3.0 present-box button
+
+`assets/ui/gift.png` is a 160×160 transparent runtime resize of a new PNG generated using the built-in image-generation tool and imagegen skill. Source: `/Users/mac/.codex/generated_images/01a0eda9-96fd-71b3-9061-54546655b502/exec-e77920d1-c70b-450b-b980-70af5c11a1b6.png`. The existing user-supplied button sheet was a style reference only. No animal, cup, loading or other button artwork was regenerated. PNG resize/optimization preserved alpha. REVIVE uses native Godot panel/text styling, not edited atlas pixels.
+
+Final prompt:
+
+> Use case: stylized-concept. Asset type: one transparent PNG game UI button. Use the supplied Mochi Animals button sheet as STYLE REFERENCE ONLY. Generate ONLY ONE circular cream/ivory button matching the reference's small circular settings button: caramel brown fine outer rim, soft peach raised bevel, warm cream surface, soft tiny bottom shadow. Replace the gear emblem with a large cute rounded pink PRESENT BOX with an apricot orange bow and ribbon. Centered straight front view, readable silhouette at 45px, kawaii soft candy shading, tasteful highlights. Button fills 90% of a square canvas, evenly centered. No text, no numbers, no extra buttons, no characters, no decorative particles, no outer background. Genuine transparent pixels outside the round button.
+
+Latest static cover: `assets/loading/static-cover.png` is an unchanged copy of `codex-clipboard-ac6af6f6-02d6-4ead-b9e3-6a593991274d.png` (1672×941), supplied by the user. Web CSS and Godot texture layout scale it proportionally to cover the loading viewport, with centered cropping for portrait screens. No image generation or pixel editing was performed.
+
 ## v2.9 loading artwork
 
 `assets/loading/reference.png` and `assets/loading/sheet.png` are unchanged copies of the two user attachments dated 2026-10-07 (`codex-clipboard-5160dd30-d154-4a02-8921-28c1e4350974.png` and `codex-clipboard-f935b4c7-7d42-4dcf-bfb6-8e71091a88e9.png`). Godot samples the combined sheet through texture regions for the background, logo, bridge group, loading-bar layers and four unicorn frames. No bitmap editing or image generation was performed. These textures are not used by the gameplay scene; original gameplay artwork is unchanged.
